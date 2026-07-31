@@ -1,7 +1,16 @@
 node_modules/
 dist/
+dist-ssr/
+logs
+*.log
 .DS_Store
 *.local
 test-results/
 playwright-report/
 playwright/.cache/
+.vscode/*
+!.vscode/extensions.json
+.idea
+
+# Phase 0 throwaway camera-spike copy — notes get carried forward, not this file
+reference-camera-spike.html
