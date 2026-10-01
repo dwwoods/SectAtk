@@ -51,6 +51,16 @@ export interface Soldier {
   boundRemaining: number;
   /** Seconds before this man may start his next bound. */
   boundCooldown: number;
+
+  // Fireteams & the offset assault (design doc §8, §10, the excalidraw).
+  /** Charlie (fire support) or Delta (the assault group). Assigned once at
+      scenario setup (behaviour/fireteam.ts); enemy soldiers do not have one. */
+  fireteam?: 'C' | 'D';
+  /** Sticky: once an assaulting man's bound puts him inside
+      ASSAULT_RAPID_DIST of the believed position, his rate goes to rapid
+      for the remainder of the assault (simulation.ts re-asserts this onto
+      fireIntent every tick, so it never fights the 2IC's rotation). */
+  assaultRapid: boolean;
 }
 
 export function isAlive(s: Soldier): boolean {
@@ -144,6 +154,7 @@ export function createRifleman(
     bounding: false,
     boundRemaining: 0,
     boundCooldown: 0,
+    assaultRapid: false,
   };
 }
 
@@ -174,5 +185,6 @@ export function createEnemy(
     bounding: false,
     boundRemaining: 0,
     boundCooldown: 0,
+    assaultRapid: false,
   };
 }

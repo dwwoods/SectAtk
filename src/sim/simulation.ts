@@ -31,6 +31,10 @@ import {
   MISSION_HOLD_SECONDS,
   MISSION_MIN_EFFECTIVES,
   PINNED_SUPPRESSION,
+  MASK_CONE_DEG,
+  ASSAULT_RAPID_DIST,
+  BOUND_LENGTH,
+  BASELINE_SPACING,
 } from './config';
 import type { FireIntent } from './config';
 import { createEnemySection, processEnemyFire } from './enemy/position';
@@ -48,6 +52,7 @@ import { processFireControl } from './behaviour/fireControl';
 import { processMovement } from './behaviour/individual';
 import { formBaseline } from './behaviour/baseline';
 import { sectionWithdraw, sectionAssault } from './behaviour/section';
+import { assignFireteams, offsetAxis, centroidOf, lineUp } from './behaviour/fireteam';
 
 // ── events ─────────────────────────────────────────────────────────────────
 // The truth stream emitted per tick. Knowledge (Phase 5) consumes these to
@@ -158,6 +163,17 @@ export class Simulation {
   /** The commander's standing fire intent for the section. The 2IC
       translates it to per-man rates each tick — while he can (§4.2). */
   sectionIntent: FireIntent = 'hold';
+  /** Fireteams & the offset assault (design doc §8, the excalidraw).
+      `active` while an 'assault' order is in effect; `split` records
+      whether the two-team technique ran or the section fell back to one
+      line (too few able Delta men); `reorgDone` latches the one automatic
+      mag check battle drill 6 fires — never more than once per assault. */
+  assaultState: { active: boolean; split: boolean; reorgDone: boolean; magCheckIssued: boolean } = {
+    active: false,
+    split: false,
+    reorgDone: false,
+    magCheckIssued: false,
+  };
 
   constructor(scenario: Scenario, worldgen: WorldGen, seed = 20260728) {
     this.rng = createRng(seed);
@@ -174,6 +190,10 @@ export class Simulation {
       return s;
     });
 
+    // Fireteams: Charlie (fire support) / Delta (the assault group), a
+    // fixed split by roster order (behaviour/fireteam.ts). The 2IC's
+    // section-wide fire-control duties are unaffected.
+    assignFireteams(this.friendlies);
     this.enemySection = createEnemySection(
       scenario.enemyPosition,
       scenario.enemySpread,
@@ -209,12 +229,16 @@ export class Simulation {
       case 'form-baseline': {
         // The commander forms a baseline on the threat AS HE BELIEVES IT
         // — the order is predicated on Knowledge, never ground truth
-        // (§9.4). No located enemy, no bearing, no baseline.
+        // (§9.4). No located enemy, no bearing, no baseline. Supersedes any
+        // assault in progress — the section is reforming, not advancing.
+        this.deactivateAssault();
         const believed = this.knowledge.enemy.position;
         if (believed) formBaseline(this.friendlies, believed);
         break;
       }
       case 'withdraw':
+        // A withdrawal supersedes any assault in progress.
+        this.deactivateAssault();
         sectionWithdraw(this.friendlies, order.rally);
         break;
       case 'assault': {
@@ -222,7 +246,11 @@ export class Simulation {
         // position as the commander BELIEVES it to be (§9.4: no order on
         // information he does not hold). Enemy not located → no assault.
         const believed = this.knowledge.enemy.position;
-        if (believed) sectionAssault(this.friendlies, believed);
+        if (believed) {
+          const result = sectionAssault(this.friendlies, believed);
+          this.assaultState = { active: true, split: result.split, reorgDone: false, magCheckIssued: false };
+          for (const f of this.friendlies) f.assaultRapid = false;
+        }
         break;
       }
       case 'move': {
@@ -295,6 +323,12 @@ export class Simulation {
     //      conditions (one foot on the ground / no move without fire).
     processMovement(this.friendlies, dt);
 
+    // 0.6. Final-bound rapid (fireteams & the offset assault, design doc
+    //      §8): must land AFTER fire control and BEFORE the fire step below,
+    //      so the override is what this tick's fire roll actually reads —
+    //      not next tick's, after fire control has already overwritten it.
+    this.applyAssaultRapid();
+
     // 1. Friendly fire: each alive friendly fires at the enemy position.
     for (const f of this.friendlies) {
       if (!isAlive(f) || !canFight(f)) continue;
@@ -305,6 +339,34 @@ export class Simulation {
 
       const target = this.nearestEnemy(f);
       if (!target) continue;
+
+      // Mask check (switch/lift fire): a fire-support man must not fire
+      // when a live friendly is nearer than the target and within
+      // MASK_CONE_DEG of his line to it. Scoped to fire support during a
+      // split assault — that's the only configuration where one team is
+      // meant to shoot past another closing on the same ground. No flag,
+      // no notification — pure geometry, recomputed fresh every tick, so
+      // support fire lifts naturally as the assault masks it.
+      const isFireSupport = this.assaultState.active && this.assaultState.split && f.fireteam === 'C';
+      if (isFireSupport) {
+        const tdx = target.pos.x - f.pos.x;
+        const tdz = target.pos.z - f.pos.z;
+        const tdist = Math.hypot(tdx, tdz) || 1;
+        const tux = tdx / tdist;
+        const tuz = tdz / tdist;
+        let masked = false;
+        for (const g of this.friendlies) {
+          if (g === f || !isAlive(g)) continue;
+          const gdx = g.pos.x - f.pos.x;
+          const gdz = g.pos.z - f.pos.z;
+          const gdist = Math.hypot(gdx, gdz);
+          if (gdist <= 0.01 || gdist >= tdist) continue; // not nearer than the target
+          const cosA = Math.min(1, Math.max(-1, (gdx * tux + gdz * tuz) / gdist));
+          const angleDeg = (Math.acos(cosA) * 180) / Math.PI;
+          if (angleDeg <= MASK_CONE_DEG) { masked = true; break; }
+        }
+        if (masked) continue;
+      }
 
       const fired = expend(f.ammo, 1);
       if (fired === 0) continue; // mag empty — step 4 starts the reload
@@ -395,6 +457,10 @@ export class Simulation {
     // 5.5. Mission — ground must be taken (battle drills 5 & 6).
     this.stepMission();
 
+    // 5.6. Fireteams & the offset assault — final-bound rapid and the
+    //      one-shot reorg (battle drill 6).
+    this.stepAssault();
+
     // 6. Process pending tier-2 orders (the time cost of information, §3.3).
     //    While a sound-off/mag-check is in flight the commander is busy and
     //    cannot observe or issue another one.
@@ -425,11 +491,22 @@ export class Simulation {
   /** Queue a tier-2 order. No stacking: a second sound-off/mag-check while
       one is in flight is ignored, and observing is cleared for the duration
       (you cannot look and listen at the same time). */
-  private queueTier2(type: 'sound-off' | 'mag-check'): void {
-    if (this.tier2BusyTicks > 0) return;
+  /** Queue a tier-2 order. No stacking: a second sound-off/mag-check while
+      one is in flight is ignored (returns false), and observing is cleared
+      for the duration (you cannot look and listen at the same time). */
+  private queueTier2(type: 'sound-off' | 'mag-check'): boolean {
+    if (this.tier2BusyTicks > 0) return false;
     for (const key of this.observing.keys()) this.observing.delete(key);
     this.tier2BusyTicks = Math.round(TIER2_ORDER_DURATION / FIXED_DT);
     this.pendingTier2 = type;
+    return true;
+  }
+
+  /** Supersede any in-progress assault: clear the state and release the
+      sticky rapid flag (it does not outlive the order it was for). */
+  private deactivateAssault(): void {
+    this.assaultState = { active: false, split: false, reorgDone: false, magCheckIssued: false };
+    for (const f of this.friendlies) f.assaultRapid = false;
   }
 
   /** Nearest alive enemy with a clear line of sight — you cannot shoot a
@@ -483,6 +560,107 @@ export class Simulation {
       }
     } else {
       this.mission.holdTicks = 0;
+    }
+  }
+
+  /** Fireteams & the offset assault (design doc §8, the excalidraw).
+      Final-bound rapid: once an assaulting man's next bound could put him
+      inside ASSAULT_RAPID_DIST of the believed position, his rate goes to
+      rapid for the rest of the assault — sticky, and re-asserted onto the
+      fireIntent field the 2IC writes every tick, so it never has to fight
+      his rotation (fireControl.ts is untouched).
+      Reorg (battle drill 6): triggers exactly once, the moment the
+      objective hold clock starts ticking over. */
+  /** Final-bound rapid (fireteams & the offset assault, design doc §8).
+      Once an assaulting man's next bound could put him inside
+      ASSAULT_RAPID_DIST of the believed position, his rate goes to rapid
+      for the rest of the assault — sticky, and re-asserted onto the
+      fireIntent field the 2IC writes every tick, so it never has to fight
+      his rotation (fireControl.ts is untouched). Must run AFTER
+      processFireControl and BEFORE the fire step in the same tick, so the
+      override is live for this tick's fire roll. Stops once reorg has
+      fired — a man standing on the objective must not re-trip it forever. */
+  private applyAssaultRapid(): void {
+    if (!this.assaultState.active || this.assaultState.reorgDone) return;
+    const believed = this.knowledge.enemy.position;
+
+    if (believed) {
+      for (const f of this.friendlies) {
+        if (!isAlive(f)) continue;
+        const assaulting = this.assaultState.split ? f.fireteam === 'D' : true;
+        if (!assaulting) continue;
+        if (!f.assaultRapid) {
+          const dist = Math.hypot(f.pos.x - believed.x, f.pos.z - believed.z);
+          if (dist - BOUND_LENGTH <= ASSAULT_RAPID_DIST) f.assaultRapid = true;
+        }
+      }
+    }
+    for (const f of this.friendlies) {
+      if (f.assaultRapid) f.fireIntent = 'rapid';
+    }
+  }
+
+  /** Reorg (battle drill 6): triggers exactly once, the moment the
+      objective hold clock starts ticking over. Runs after stepMission, so
+      it sees this tick's holdTicks. */
+  private stepAssault(): void {
+    if (!this.assaultState.active) return;
+
+    if (!this.assaultState.reorgDone && this.mission.holdTicks === 1) {
+      this.triggerReorg();
+      this.assaultState.reorgDone = true;
+    }
+    // The mag check may have been refused (a sound-off already in flight
+    // when the reorg fired) — keep asking until the tier-2 pipeline
+    // actually accepts it, so "exactly one" still means exactly one, not
+    // zero.
+    if (this.assaultState.reorgDone && !this.assaultState.magCheckIssued) {
+      if (this.queueTier2('mag-check')) this.assaultState.magCheckIssued = true;
+    }
+
+    // Fire support settling onto the objective line overwrites its own
+    // heading while bounding (individual.ts faces a man toward his
+    // target while he moves). Re-face everyone who has arrived and
+    // stopped — "all-round defence" has to hold once men are down, not
+    // just at the instant reorg fired.
+    if (this.assaultState.reorgDone && this.objective) {
+      const centre = this.objective.pos;
+      for (const f of this.friendlies) {
+        if (!isAlive(f) || f.bounding || f.moveTarget !== null) continue;
+        const dx = f.pos.x - centre.x;
+        const dz = f.pos.z - centre.z;
+        if (dx !== 0 || dz !== 0) f.heading = Math.atan2(dz, dx);
+      }
+    }
+  }
+
+  /** Battle drill 6 — reorganisation. All men face outward (reuses
+      heading; no new field), final-bound rapid is cancelled (it does not
+      outlive the assault it was for), and fire support is released to
+      move up onto the objective line. The automatic mag check itself is
+      queued by stepAssault above, through the existing tier-2 pipeline —
+      same latency, same ambiguity, as if the commander had ordered it. No
+      free information. */
+  private triggerReorg(): void {
+    const centre = this.objective ? this.objective.pos : null;
+    if (centre) {
+      for (const f of this.friendlies) {
+        if (!isAlive(f)) continue;
+        const dx = f.pos.x - centre.x;
+        const dz = f.pos.z - centre.z;
+        if (dx !== 0 || dz !== 0) f.heading = Math.atan2(dz, dx);
+      }
+    }
+
+    for (const f of this.friendlies) f.assaultRapid = false;
+
+    if (this.assaultState.split && this.objective) {
+      const charlie = this.friendlies.filter((f) => f.fireteam === 'C');
+      const charlieAble = charlie.filter((f) => isAlive(f));
+      const axis = charlieAble.length > 0
+        ? offsetAxis(centroidOf(charlieAble), this.objective.pos, 0)
+        : { x: 1, z: 0 };
+      lineUp(charlie, this.objective.pos, axis, BASELINE_SPACING);
     }
   }
   private stepFirefight(enemyShotsThisTick: number): void {

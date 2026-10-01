@@ -107,6 +107,8 @@ function serializeSim(sim: Simulation): string {
     sim.tier2BusyTicks, sim.pendingTier2 === 'sound-off' ? 1 : sim.pendingTier2 === 'mag-check' ? 2 : 0,
     sim.mission.status === 'none' ? 0 : sim.mission.status === 'active' ? 1 : sim.mission.status === 'taken' ? 2 : 3,
     sim.mission.holdTicks,
+    sim.assaultState.active ? 1 : 0, sim.assaultState.split ? 1 : 0, sim.assaultState.reorgDone ? 1 : 0,
+    sim.assaultState.magCheckIssued ? 1 : 0,
   ];
 
   // Friendlies and enemies: full state.
@@ -121,6 +123,7 @@ function serializeSim(sim: Simulation): string {
       s.wound?.atTick ?? -1,
       s.moveTarget?.x ?? -9999, s.moveTarget?.z ?? -9999,
       s.bounding ? 1 : 0, s.boundRemaining, s.boundCooldown,
+      s.fireteam === 'C' ? 1 : s.fireteam === 'D' ? 2 : 0, s.assaultRapid ? 1 : 0,
     );
   }
 
