@@ -39,6 +39,7 @@ import { processObservationEvent } from './knowledge/observation';
 import { processCryEvent } from './knowledge/audible';
 import { processSoundOff, processMagCheck } from './knowledge/elicited';
 import { TIER2_ORDER_DURATION } from './config';
+import { processFireControl } from './behaviour/fireControl';
 
 // ── events ─────────────────────────────────────────────────────────────────
 // The truth stream emitted per tick. Knowledge (Phase 5) consumes these to
@@ -121,6 +122,9 @@ export class Simulation {
   tier2BusyTicks = 0;
   /** The pending tier-2 order type, set when queued. */
   pendingTier2: 'sound-off' | 'mag-check' | null = null;
+  /** The commander's standing fire intent for the section. The 2IC
+      translates it to per-man rates each tick — while he can (§4.2). */
+  sectionIntent: FireIntent = 'hold';
 
   constructor(scenario: Scenario, worldgen: WorldGen, seed = 20260728) {
     this.rng = createRng(seed);
@@ -154,9 +158,11 @@ export class Simulation {
   applyOrder(order: Order): void {
     switch (order.type) {
       case 'set-fire-intent':
-        for (const f of this.friendlies) {
-          if (isAlive(f)) f.fireIntent = order.intent;
-        }
+        // The commander sets INTENT only. The 2IC translates it into
+        // per-man rates each tick (behaviour/fireControl.ts) — and if
+        // the 2IC is down, nobody is managing fire: rates stop being
+        // adjusted and the order changes nothing (design doc §4.2).
+        this.sectionIntent = order.intent;
         break;
       case 'stance': {
         const man = this.world.getEntity(order.manId);
@@ -207,6 +213,10 @@ export class Simulation {
     }
     this.events = [];
     this.tick++;
+
+    // 0. Fire control — the 2IC translates section intent to per-man
+    //    rates and rotates men out to re-bomb. Lapses silently with him.
+    processFireControl(this.friendlies, this.sectionIntent);
 
     // 1. Friendly fire: each alive friendly fires at the enemy position.
     for (const f of this.friendlies) {

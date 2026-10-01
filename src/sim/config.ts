@@ -103,6 +103,18 @@ export const INTENT_ROF: Record<FireIntent, number> = {
   rapid: 4.0, // full auto — burns rounds
 };
 
+// ── fire control — the 2IC's judgement (design doc §4.1, Phase 7) ────────
+/** A man with this many spare magazines or fewer is throttled back to
+    'hold' regardless of section intent — the 2IC keeps the burn
+    sustainable. Provisional. */
+export const FIRE_DISCIPLINE_LOW_MAGS = 1;
+/** The 2IC rotates a man out to re-bomb when he is down to this many
+    spare magazines (and still has bandolier rounds). Provisional. */
+export const REBOMB_TRIGGER_MAGS = 2;
+/** Never more than this many men re-bombing at once — fire dips, never
+    collapses. Provisional. */
+export const REBOMB_MAX_CONCURRENT = 2;
+
 // ── voice (design doc §3.1, tier 2) ────────────────────────────────────────
 /** Max range for a sound-off / mag-check answer to be heard, metres. */
 export const VOICE_RANGE = 300;

@@ -95,7 +95,10 @@ export function processAmmoTick(
   return events;
 }
 
-function startRebomb(soldier: Soldier): void {
+/** Put a soldier into the re-bombing state (bandolier → magazine, takes
+    REBOMB_DURATION, not firing throughout). Called when a mag runs dry
+    with no spares, and by the 2IC's proactive rotation (fireControl). */
+export function startRebomb(soldier: Soldier): void {
   soldier.reloadT = REBOMB_DURATION;
   soldier.reBombing = true;
 }
