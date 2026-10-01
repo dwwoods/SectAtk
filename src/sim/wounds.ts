@@ -58,16 +58,6 @@ export function canSoundOff(wound: Wound): boolean {
 }
 
 /**
- * Did a mortal-wound soldier go silent (cry period expired)?
- * Returns true if the mortal's cryUntil has passed.
- */
-export function mortalHasGoneSilent(wound: Wound, currentTick: number): boolean {
-  if (wound.severity !== 'mortal') return false;
-  if (wound.cryUntil === null) return false;
-  return currentTick >= wound.cryUntil;
-}
-
-/**
  * Can the soldier fight after this wound?
  */
 export function canFightFromWound(wound: Wound): boolean {

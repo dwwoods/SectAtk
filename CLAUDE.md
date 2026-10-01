@@ -34,7 +34,7 @@ they're adopted, phase by phase (design doc §7.2).
       position.ts     static concealed position, finite ammo, suppression response
     /knowledge
       knowledge.ts    belief types (friend: pos/status/ammo, enemy: pos/count/firing NO ammo)
-      journal.ts      append-only log + query/assertion helpers
+      journal.ts      append-only log + assertion helpers (query utils return with AAR, Phase 8)
       observation.ts  tier 1 — LOS-driven truth updates (muzzle flash, man falls)
       audible.ts      tier 1 — wound-gated cries, attenuated
       elicited.ts     tier 2 — sound off (three-valued), mag check
@@ -47,7 +47,7 @@ they're adopted, phase by phase (design doc §7.2).
       section.ts      (stub — Phase 7)
       decisionTree.ts (stub — Phase 7)
   /worldgen     # single source of truth for looks AND tactics
-    noise.ts          gradient noise, fbm, ridged, billow (ported from reference)
+    noise.ts          gradient noise, fbm, ridged (ported from reference)
     config.ts         world size (600m), resolutions
     heightfield.ts    terrain → heightAt, normalAt, bake from noise seed
     meadow.ts         grass concealment raster (0..1) correlated with slope

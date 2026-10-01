@@ -145,15 +145,3 @@ export interface EnemyShot {
   target: Soldier;
   result: ReturnType<typeof resolveShot>;
 }
-
-/** Total rounds remaining in the enemy position (sim truth; never exposed
-    to the player's Knowledge). */
-export function enemyRoundsRemaining(enemy: EnemySection): number {
-  let total = 0;
-  for (const s of enemy.soldiers) {
-    if (isAlive(s)) {
-      total += s.ammo.currentMag + s.ammo.spareMags * MAG_ROUNDS + s.ammo.bandolier;
-    }
-  }
-  return total;
-}

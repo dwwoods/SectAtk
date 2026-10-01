@@ -105,14 +105,3 @@ export type AmmoEvent =
   | { type: 'reload-complete' }
   | { type: 're-bomb-start' }
   | { type: 're-bomb-complete' };
-
-/** Total rounds held by a soldier (in mags + bandolier). */
-export function roundsHeld(ammo: AmmoState): number {
-  return ammo.currentMag + ammo.spareMags * MAG_ROUNDS + ammo.bandolier;
-}
-
-/** Total rounds fired by a soldier (issued - held - stranded). */
-export function roundsFired(ammo: AmmoState, isDead: boolean): number {
-  const held = isDead ? 0 : roundsHeld(ammo);
-  return ammo.issued - held;
-}

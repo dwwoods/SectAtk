@@ -16,9 +16,3 @@ export const MASK_RES = 256;
 
 /** Distance field resolution (per side). */
 export const DF_RES = 128;
-
-/** Cell size for the distance field. */
-export const DF_CELL = WORLD_SIZE / DF_RES;
-
-/** Seed used for terrain generation. Deterministic — change for a new world. */
-export const TERRAIN_SEED = 20260728;

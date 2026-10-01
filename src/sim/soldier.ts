@@ -75,15 +75,6 @@ export function canFight(s: Soldier): boolean {
   return true;
 }
 
-/** Can this soldier move? */
-export function canMove(s: Soldier): boolean {
-  if (!s.wound) return true;
-  if (s.wound.severity === 'fatal-cns' || s.wound.severity === 'mortal' || s.wound.severity === 'serious') {
-    return false;
-  }
-  return true;
-}
-
 /** Effective rate of fire for a soldier, accounting for suppression and
     wound state. Returns rounds-per-second this tick. */
 export function effectiveRof(s: Soldier): number {

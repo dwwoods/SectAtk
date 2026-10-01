@@ -114,24 +114,6 @@ export function appendJournalEntry(journal: Journal, entry: JournalEntry): void 
 // without evidence — the type system makes an unattributed belief
 // inexpressible, not merely discouraged.
 
-export function updateFriendPosition(
-  state: KnowledgeState,
-  journal: Journal,
-  soldierId: string,
-  position: Vec2,
-  evidence: Evidence,
-): void {
-  const b = state.friendlies.get(soldierId);
-  if (!b) return;
-  const before = b.position;
-  if (sameVec(before, position)) return; // no change → no journal entry
-  b.position = position;
-  appendJournalEntry(journal, {
-    tick: evidence.tick, subject: soldierId, field: 'position',
-    before: before ? { ...before } : null, after: { ...position }, evidence,
-  });
-}
-
 export function updateFriendStatus(
   state: KnowledgeState,
   journal: Journal,
@@ -221,21 +203,6 @@ export function updateEnemyFiring(
   appendJournalEntry(journal, {
     tick: evidence.tick, subject: 'enemy', field: 'firing',
     before, after: firing, evidence,
-  });
-}
-
-export function updateEnemyCountEstimate(
-  state: KnowledgeState,
-  journal: Journal,
-  count: number,
-  evidence: Evidence,
-): void {
-  if (state.enemy.countEstimate === count) return;
-  const before = state.enemy.countEstimate;
-  state.enemy.countEstimate = count;
-  appendJournalEntry(journal, {
-    tick: evidence.tick, subject: 'enemy', field: 'countEstimate',
-    before, after: count, evidence,
   });
 }
 

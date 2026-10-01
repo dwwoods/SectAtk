@@ -20,8 +20,3 @@ export function nextFloat(rng: RngState): number {
   t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 }
-
-// Integer in [0, maxExclusive).
-export function nextInt(rng: RngState, maxExclusive: number): number {
-  return Math.floor(nextFloat(rng) * maxExclusive);
-}

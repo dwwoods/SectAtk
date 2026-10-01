@@ -127,25 +127,4 @@ export function ridged(
   return (s / n) * 2 - 1;
 }
 
-// Billow noise. Returns values in ~[-1, 1].
-export function billow(
-  x: number,
-  y: number,
-  oct = 4,
-  lac = 2.0,
-  gain = 0.5,
-): number {
-  let a = 0.5;
-  let f = 1;
-  let s = 0;
-  let n = 0;
-  for (let i = 0; i < oct; i++) {
-    s += a * Math.abs(noise2(x * f, y * f));
-    n += a;
-    a *= gain;
-    f *= lac;
-  }
-  return (s / n) * 2 - 1;
-}
-
 export { clamp, lerp, smoothstep };

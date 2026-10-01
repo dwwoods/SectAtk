@@ -31,13 +31,6 @@ export const RELOAD_DURATION = 2.5;
 export const REBOMB_DURATION = 20;
 
 // ── suppression (design doc §9.3, "Define win the firefight numerically") ──
-/** Rounds-per-second landing close required for "firm" suppression.
-    Used by the firefight resolution to calibrate the suppression curve.
-    NOTE: this is a design spec, not a direct code input — the per-round
-    suppression amount (SUPPRESSION_PER_ROUND) and the decay rate
-    (SUPPRESSION_DECAY) are tuned to produce this threshold. Kept here
-    as the named reference value for the Phase 9 tuning pass. */
-export const SUPPRESSION_ROUNDS_PER_SEC = 3;
 /** Suppression added by one near-miss round at 1 m miss distance. */
 export const SUPPRESSION_PER_ROUND = 0.14;
 /** Seconds for a suppressed man to recover fully if morale is high. */
@@ -76,18 +69,12 @@ export const STANCE_HIT_MULT: Record<StanceName, number> = {
 /** A man raising up to observe exposes himself — the "visible tell" of
     spending the risk currency (design doc §2.1). */
 export const OBSERVATION_EXPOSURE_MULTIPLIER = 1.6;
-/** Grass concealment multiplier: hit chance is multiplied by
-    (1 - concealment) to a power, so deep grass meaningfully protects. */
-export const GRASS_CONCEALMENT_HEIGHT = 0.9;
 
 // ── ballistics ─────────────────────────────────────────────────────────────
 /** A rifleman's dispersion, metres of miss at 100 m (small-arms-like). */
 export const DISPERSION_100M = 0.8;
 /** Distance at which a hit is still a "near miss" for suppression, m. */
 export const NEAR_MISS_RADIUS = 2.0;
-/** Muzzle velocity, m/s. Fast enough that flight time is negligible at
-    section ranges; kept for the ballistics interface to be honest. */
-export const MUZZLE_VELOCITY = 780;
 
 // ── enemy (design doc §2.4) ────────────────────────────────────────────────
 /** Rounds each enemy rifleman starts with (provisional — the player can
@@ -127,11 +114,3 @@ export const MINOR_CRY_DURATION = 60;
 /** Seconds a sound-off or mag-check takes to execute. During this time the
     commander is not observing, and ammunition keeps burning. Provisional. */
 export const TIER2_ORDER_DURATION = 5;
-
-// ── doctrine (design doc §9.3) ─────────────────────────────────────────────
-/** Max fraction of the section allowed to be moving at any tick ("one foot
-    on the ground"). Enforced by the doctrinal invariant test once movement
-    lands in Phase 7; the constant arrives now so the test has a number. */
-export const MAX_SIMULTANEOUS_MOVERS = 3;
-/** A man is "pinned" (cannot fire) when suppression exceeds this. */
-export const PINNED_SUPPRESSION = 0.8;
