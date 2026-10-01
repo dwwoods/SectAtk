@@ -10,6 +10,7 @@ import { bakeWorld } from './worldgen';
 import { Simulation, type Scenario } from './sim/simulation';
 import { Clock } from './sim/clock';
 import { SectAtkRenderer } from './render/renderer';
+import { OrdersPanel } from './ui/orders';
 
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) throw new Error('#app root element missing');
@@ -28,7 +29,7 @@ app.appendChild(canvas);
 const seed = 20260728;
 const worldgen = bakeWorld(seed);
 
-// ── scenario (Phase 4+ test scenario; real mission arrives Phase 8) ────────
+// ── scenario — the mission: ground must be taken (design doc §13.1) ─────
 const scenario: Scenario = {
   friendlyStart: [
     { name: 'Cpl. Harris', role: 'commander', pos: { x: -40, z: 20 } },
@@ -43,6 +44,9 @@ const scenario: Scenario = {
   enemyPosition: { x: 60, z: -10 },
   enemySpread: 3,
   enemyHeading: Math.PI,
+  // The enemy position sits on the ground the section must take.
+  objective: { pos: { x: 60, z: -10 } },
+  rally: { x: -120, z: 60 },
 };
 
 const sim = new Simulation(scenario, worldgen, seed);
@@ -52,6 +56,9 @@ const clock = new Clock((dt) => sim.step(dt));
 
 // ── renderer ───────────────────────────────────────────────────────────────
 const renderer = new SectAtkRenderer(worldgen);
+
+// ── orders UI — verbal-idiom orders grouped by the battle drills ────────
+new OrdersPanel(app, sim);
 
 // Speed control: 1/2/4 keys cycle speed; space pauses. This is the phase-8
 // UI placeholder — the real time controls live in /ui.

@@ -164,6 +164,27 @@ docs/iteration-notes.md.
   unjournaled, ammoLow journaled under the wrong field name, knownDead
   implying a status write.
 
+## Mission — ground must be taken (§13.1 option 1, decided)
+- Scenario gains objective + rally. TAKEN = fight through, occupy with
+  MISSION_HOLD_MEN, hold MISSION_HOLD_SECONDS with every enemy on the
+  position neutralised (drills 5 & 6). Winning the firefight at a
+  distance leaves the mission open. FAILED = combat-ineffective
+  (< MISSION_MIN_EFFECTIVES able to fight).
+- Assault order: section line through the BELIEVED position to
+  ASSAULT_THROUGH_DEPTH beyond (fight through, reorg far side), under
+  the F&M doctrinal gates. Knowledge-gated: no location, no assault.
+- End-to-end scripted attack test takes the ground.
+
+## Phase 8 — Orders UI (done)
+- /ui/orders.ts: verbal-idiom panel grouped by the battle drills —
+  locate (observe / sound off / mag check), win the firefight (four
+  intents), the attack (form baseline / assault / withdraw).
+- Readouts draw from Knowledge ONLY: believed per-man statuses, believed
+  enemy location, the commander's own acts. Nothing shows ground truth,
+  firefight-won state, or fire-control lapse.
+- Playwright e2e: panel mounts, mission brief shows, buttons dispatch
+  orders into the sim.
+
 ## Next
 - Phase 2 renderer port (terrain, grass, atmosphere, post) — needs human
   visual gate.

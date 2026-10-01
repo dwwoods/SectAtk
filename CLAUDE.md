@@ -70,7 +70,7 @@ they're adopted, phase by phase (design doc §7.2).
     fireDensity.ts    (stub — Phase 6)
     cues.ts           (stub — Phase 6)
   /ui
-    orders.ts         (stub — Phase 8)
+    orders.ts         battle-drill-grouped verbal orders; readouts from Knowledge ONLY
     contact.ts        (stub — Phase 8)
     timeControls.ts   (stub — Phase 8)
   /aar
@@ -92,6 +92,8 @@ they're adopted, phase by phase (design doc §7.2).
     aar-replay.test.ts            journal derivability (3 tests)
   /scenarios
     smoke.spec.ts                 Playwright e2e — app boots
+    orders-ui.spec.ts             Playwright e2e — panel mounts, orders dispatch
+    (mission.test.ts lives in /invariants — ground must be taken, 7 tests)
   /visual                         (not yet populated)
 ```
 
@@ -105,7 +107,9 @@ Phase 7: done machine-side (2IC fire control, individual F&M + doctrinal
   invariants across 100 seeds, baseline, withdrawal, decision tree over
   Knowledge only). Human movement review pending. pair/fireteam are
   post-MVP assault-phase stubs.
-Phase 8: AAR replay core done (journal derivability). UI, markers pending.
+Phase 8: AAR replay core done (journal derivability); mission "ground must
+  be taken" (§13.1 option 1) + assault order done; orders UI panel done.
+  Markers, contact report, time controls pending.
 Phase 2 render: terrain/grass/atmosphere/post ported + adaptive quality;
   visual gate (human) pending. Phase 3/6: camera spring arm ported;
   soldier renderer and audio are stubs.
@@ -144,7 +148,7 @@ Phase 2 render: terrain/grass/atmosphere/post ported + adaptive quality;
 
 ## Running the gates
 
-- `npm run test` — vitest, 106 tests across 16 files (determinism gates,
+- `npm run test` — vitest, 113 tests across 17 files (determinism gates,
   ammo conservation, wound table, suppression model, worldgen consistency,
   knowledge-absence assertions, firefight resolution, exposure/LOS,
   ballistics, LOS-gates-fire, adaptive quality, fire control, movement
