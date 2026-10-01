@@ -30,6 +30,13 @@ const UPGRADE_AFTER_MS = 5000;
 const UPGRADE_HEADROOM = 0.6;
 /** Minimum time between level changes, ms. */
 const COOLDOWN_MS = 2000;
+/** A downgrade this soon after an upgrade means the upgrade was wrong —
+    the machine can't hold the higher level. Each such round trip doubles
+    the headroom time required before the next upgrade attempt (capped),
+    so oscillation decays instead of hitching every few seconds: every
+    level change reallocates render targets, which is a visible stutter. */
+const OSCILLATION_WINDOW_MS = 15000;
+const UPGRADE_REQ_MAX_MS = 80000;
 
 export interface AdaptiveState {
   level: number;
@@ -37,6 +44,10 @@ export interface AdaptiveState {
   overBudgetMs: number;
   underBudgetMs: number;
   cooldownMs: number;
+  /** Headroom time currently required to upgrade (grows on oscillation). */
+  upgradeReqMs: number;
+  /** Time since the last upgrade, ms. */
+  sinceUpgradeMs: number;
 }
 
 export function createAdaptiveState(): AdaptiveState {
@@ -46,6 +57,8 @@ export function createAdaptiveState(): AdaptiveState {
     overBudgetMs: 0,
     underBudgetMs: 0,
     cooldownMs: 0,
+    upgradeReqMs: UPGRADE_AFTER_MS,
+    sinceUpgradeMs: Number.MAX_SAFE_INTEGER,
   };
 }
 
@@ -56,6 +69,7 @@ export function createAdaptiveState(): AdaptiveState {
 export function stepAdaptive(s: AdaptiveState, frameCostMs: number): number | null {
   s.emaMs = s.emaMs === 0 ? frameCostMs : s.emaMs + EMA_ALPHA * (frameCostMs - s.emaMs);
   if (s.cooldownMs > 0) s.cooldownMs = Math.max(0, s.cooldownMs - frameCostMs);
+  if (s.sinceUpgradeMs < Number.MAX_SAFE_INTEGER) s.sinceUpgradeMs += frameCostMs;
 
   if (s.emaMs > FRAME_BUDGET_MS) {
     s.overBudgetMs += frameCostMs;
@@ -75,12 +89,18 @@ export function stepAdaptive(s: AdaptiveState, frameCostMs: number): number | nu
     s.level--;
     s.overBudgetMs = 0;
     s.cooldownMs = COOLDOWN_MS;
+    if (s.sinceUpgradeMs < OSCILLATION_WINDOW_MS) {
+      s.upgradeReqMs = Math.min(s.upgradeReqMs * 2, UPGRADE_REQ_MAX_MS);
+    } else {
+      s.upgradeReqMs = UPGRADE_AFTER_MS; // fresh regression, not oscillation
+    }
     return s.level;
   }
-  if (s.underBudgetMs >= UPGRADE_AFTER_MS && s.level < MAX_QUALITY_LEVEL) {
+  if (s.underBudgetMs >= s.upgradeReqMs && s.level < MAX_QUALITY_LEVEL) {
     s.level++;
     s.underBudgetMs = 0;
     s.cooldownMs = COOLDOWN_MS;
+    s.sinceUpgradeMs = 0;
     return s.level;
   }
   return null;

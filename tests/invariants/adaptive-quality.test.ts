@@ -69,6 +69,28 @@ describe('adaptive quality controller', () => {
     expect(run(s, FRAME_BUDGET_MS * 4, 10000)).toEqual([]);
   });
 
+  it('oscillation decays: repeated up/down round trips grow the upgrade requirement', () => {
+    // A machine that is over budget at MAX but comfortable one level down
+    // — the classic oscillation case. Each round trip must slow the next
+    // upgrade attempt, so level changes get rarer instead of hitching
+    // every few seconds forever.
+    const s = createAdaptiveState();
+    const changeTimes: number[] = [];
+    let t = 0;
+    while (t < 600000) {
+      const cost = s.level === 3 ? FRAME_BUDGET_MS * 1.5 : FRAME_BUDGET_MS * 0.4;
+      if (stepAdaptive(s, cost) !== null) changeTimes.push(t);
+      t += cost;
+    }
+    expect(changeTimes.length).toBeGreaterThan(2);
+    // Changes in the second half must be rarer than in the first half.
+    const half = 300000;
+    const firstHalf = changeTimes.filter((t) => t < half).length;
+    const secondHalf = changeTimes.filter((t) => t >= half).length;
+    expect(secondHalf).toBeLessThan(firstHalf);
+    // And the upgrade requirement must have grown well past the default.
+    expect(s.upgradeReqMs).toBeGreaterThanOrEqual(40000);
+  });
   it('separates consecutive changes by the cooldown', () => {
     const s = createAdaptiveState();
     const cost = FRAME_BUDGET_MS * 2;

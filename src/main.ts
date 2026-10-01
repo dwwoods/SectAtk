@@ -67,6 +67,35 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
+// ── debug overlay (dev only; the real HUD lives in /ui, Phase 8) ─────────
+// Shows frame interval, render cost, adaptive quality level, and the worst
+// frame gap of the last second — for correlating stutter with level changes
+// or GC. Toggle with F9.
+const hud = document.createElement('div');
+hud.style.cssText =
+  'position:fixed;top:8px;left:8px;padding:4px 8px;font:11px monospace;' +
+  'color:#cfc;background:rgba(0,0,0,0.55);pointer-events:none;z-index:10;white-space:pre';
+app.appendChild(hud);
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'F9') hud.style.display = hud.style.display === 'none' ? 'block' : 'none';
+});
+let frameIntervalEma = 16.7;
+let worstGapMs = 0;
+setInterval(() => {
+  const a = renderer.adaptive;
+  hud.textContent =
+    `frame ${frameIntervalEma.toFixed(1)}ms (${(1000 / frameIntervalEma).toFixed(0)}fps)` +
+    `  worst ${worstGapMs.toFixed(0)}ms\n` +
+    `render ${a.emaMs.toFixed(1)}ms  quality L${a.level}  upReq ${(a.upgradeReqMs / 1000).toFixed(0)}s`;
+  worstGapMs = 0;
+}, 500);
+
+// Console handle for profiling sessions.
+declare global {
+  interface Window { __sectatk?: { sim: Simulation; clock: Clock; renderer: SectAtkRenderer } }
+}
+window.__sectatk = { sim, clock, renderer };
+
 // ── game loop ──────────────────────────────────────────────────────────────────
 // requestAnimationFrame is the preferred driver — vsync-aligned, full native
 // refresh rate. But headless Chromium misbehaves in both directions: it can
@@ -81,6 +110,9 @@ let lastTickAt = -Infinity;
 function tick(now: number): void {
   lastTickAt = now;
   const frameDelta = Math.min(0.1, (now - last) / 1000);
+  const gapMs = (now - last);
+  frameIntervalEma += 0.1 * (gapMs - frameIntervalEma);
+  if (gapMs > worstGapMs) worstGapMs = gapMs;
   last = now;
   clock.advance(frameDelta);
   const commander = sim.friendlies[0];

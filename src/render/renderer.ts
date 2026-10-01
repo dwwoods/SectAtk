@@ -145,6 +145,11 @@ export class SectAtkRenderer {
     // Adaptive quality: feed this frame's render cost; step the level
     // when the controller says so (sustained over-budget or headroom).
     const newLevel = stepAdaptive(this.adaptive, performance.now() - t0);
-    if (newLevel !== null) this.applyQuality(newLevel);
+    if (newLevel !== null) {
+      // Level changes reallocate render targets — a deliberate, visible
+      // hitch. Logged so stutter reports can be correlated with them.
+      console.info(`[adaptive] quality level → ${newLevel} (ema ${this.adaptive.emaMs.toFixed(1)}ms)`);
+      this.applyQuality(newLevel);
+    }
   }
 }
