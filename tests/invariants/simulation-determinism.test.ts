@@ -117,6 +117,8 @@ function serializeSim(sim: Simulation): string {
       s.reloadT, s.reBombing ? 1 : 0,
       s.wound ? s.wound.severity.length + s.wound.location.length : 0,
       s.wound?.atTick ?? -1,
+      s.moveTarget?.x ?? -9999, s.moveTarget?.z ?? -9999,
+      s.bounding ? 1 : 0, s.boundRemaining, s.boundCooldown,
     );
   }
 

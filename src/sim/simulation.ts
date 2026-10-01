@@ -13,7 +13,7 @@ import type { RngState } from './rng';
 import { createRng, nextFloat } from './rng';
 import { World } from './world';
 import type { Soldier, SoldierSide } from './soldier';
-import { createRifleman, isAlive, effectiveRof, canFight, updateMorale } from './soldier';
+import { createRifleman, isAlive, effectiveRof, canFight, canMove, updateMorale } from './soldier';
 import type { AmmoState } from './ammunition';
 import { createAmmo, expend, processAmmoTick, type AmmoEvent } from './ammunition';
 import type { Wound } from './wounds';
@@ -32,7 +32,7 @@ import { createEnemySection, processEnemyFire } from './enemy/position';
 import { getExposureProfile, getCoverFactor } from './exposure';
 import { resolveShot } from './ballistics';
 import { soldierLos } from './los';
-import type { StanceName } from './types';
+import type { StanceName, Vec2 } from './types';
 import type { WorldGen } from '../worldgen';
 import { createKnowledge, type KnowledgeState, type Journal } from './knowledge/knowledge';
 import { processObservationEvent } from './knowledge/observation';
@@ -40,6 +40,7 @@ import { processCryEvent } from './knowledge/audible';
 import { processSoundOff, processMagCheck } from './knowledge/elicited';
 import { TIER2_ORDER_DURATION } from './config';
 import { processFireControl } from './behaviour/fireControl';
+import { processMovement } from './behaviour/individual';
 
 // ── events ─────────────────────────────────────────────────────────────────
 // The truth stream emitted per tick. Knowledge (Phase 5) consumes these to
@@ -70,6 +71,8 @@ export type SimEvent =
 export type Order =
   | { type: 'set-fire-intent'; intent: FireIntent }
   | { type: 'stance'; manId: string; stance: StanceName }
+  | { type: 'move'; manId: string; target: Vec2 }
+  | { type: 'halt'; manId: string }
   | { type: 'observe'; manId?: string }
   | { type: 'stop-observe'; manId?: string }
   | { type: 'sound-off' }
@@ -164,6 +167,18 @@ export class Simulation {
         // adjusted and the order changes nothing (design doc §4.2).
         this.sectionIntent = order.intent;
         break;
+      case 'move': {
+        const man = this.world.getEntity(order.manId);
+        if (man && man.side === 'friendly' && isAlive(man) && canMove(man)) {
+          man.moveTarget = { x: order.target.x, z: order.target.z };
+        }
+        break;
+      }
+      case 'halt': {
+        const man = this.world.getEntity(order.manId);
+        if (man) man.moveTarget = null; // finishes the current bound, then stays down
+        break;
+      }
       case 'stance': {
         const man = this.world.getEntity(order.manId);
         if (man) {
@@ -217,6 +232,10 @@ export class Simulation {
     // 0. Fire control — the 2IC translates section intent to per-man
     //    rates and rotates men out to re-bomb. Lapses silently with him.
     processFireControl(this.friendlies, this.sectionIntent);
+
+    // 0.5. Individual fire & movement — bounds gated by the two doctrinal
+    //      conditions (one foot on the ground / no move without fire).
+    processMovement(this.friendlies, dt);
 
     // 1. Friendly fire: each alive friendly fires at the enemy position.
     for (const f of this.friendlies) {

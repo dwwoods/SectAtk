@@ -115,6 +115,29 @@ export const REBOMB_TRIGGER_MAGS = 2;
     collapses. Provisional. */
 export const REBOMB_MAX_CONCURRENT = 2;
 
+// ── movement — individual fire & movement (design doc §8, §9.3, Phase 7) ─
+/** "One foot on the ground": at no tick may more than this many men of
+    the section be moving. Enforced by behaviour/individual.ts and
+    property-tested every tick (tests/invariants/movement.test.ts). */
+export const MAX_SIMULTANEOUS_MOVERS = 3;
+/** "No move without fire": nobody bounds unless at least this many
+    non-moving men are currently able to fire. */
+export const COVERING_FIRE_MIN = 2;
+/** A man is pinned (cannot start a bound) above this suppression. */
+export const PINNED_SUPPRESSION = 0.8;
+/** Movement speed by stance, m/s: leopard crawl / crouched run / sprint.
+    Provisional. */
+export const MOVE_SPEED: Record<StanceName, number> = {
+  prone: 0.5,
+  crouch: 2.0,
+  stand: 3.6,
+};
+/** Maximum metres covered in one bound before going back down. */
+export const BOUND_LENGTH = 8;
+/** Seconds a man stays down between his own bounds (others bound while
+    he covers). */
+export const BOUND_PAUSE = 2;
+
 // ── voice (design doc §3.1, tier 2) ────────────────────────────────────────
 /** Max range for a sound-off / mag-check answer to be heard, metres. */
 export const VOICE_RANGE = 300;

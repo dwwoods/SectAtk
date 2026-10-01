@@ -41,6 +41,16 @@ export interface Soldier {
 
   /** Rounds fired this tick (set by ballistics, read by ammo). */
   roundsFiredThisTick: number;
+
+  // Movement (individual fire & movement, Phase 7).
+  /** Where this man has been ordered to go, or null. */
+  moveTarget: Vec2 | null;
+  /** True while mid-bound (up and running — not firing, exposed). */
+  bounding: boolean;
+  /** Metres left in the current bound before going back down. */
+  boundRemaining: number;
+  /** Seconds before this man may start his next bound. */
+  boundCooldown: number;
 }
 
 export function isAlive(s: Soldier): boolean {
@@ -75,10 +85,21 @@ export function canFight(s: Soldier): boolean {
   return true;
 }
 
+/** Can this soldier move? A man who can neither fight nor move lies
+    where he fell (design doc §5). */
+export function canMove(s: Soldier): boolean {
+  if (!s.wound) return true;
+  if (s.wound.severity === 'fatal-cns' || s.wound.severity === 'mortal' || s.wound.severity === 'serious') {
+    return false;
+  }
+  return true;
+}
+
 /** Effective rate of fire for a soldier, accounting for suppression and
     wound state. Returns rounds-per-second this tick. */
 export function effectiveRof(s: Soldier): number {
   if (!canFight(s)) return 0;
+  if (s.bounding) return 0; // up and running — not firing
   if (s.suppression >= 0.85) return 0; // pinned
   if (s.reloadT > 0 || s.reBombing) return 0; // not firing
   if (s.ammo.currentMag === 0) return 0; // empty
@@ -119,6 +140,10 @@ export function createRifleman(
     reloadT: 0,
     reBombing: false,
     roundsFiredThisTick: 0,
+    moveTarget: null,
+    bounding: false,
+    boundRemaining: 0,
+    boundCooldown: 0,
   };
 }
 
@@ -145,5 +170,9 @@ export function createEnemy(
     reloadT: 0,
     reBombing: false,
     roundsFiredThisTick: 0,
+    moveTarget: null,
+    bounding: false,
+    boundRemaining: 0,
+    boundCooldown: 0,
   };
 }
