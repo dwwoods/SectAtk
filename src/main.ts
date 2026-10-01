@@ -67,18 +67,60 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
-// ── game loop ──────────────────────────────────────────────────────────────
-// Use setInterval instead of requestAnimationFrame for headless compatibility.
-// Headless Chromium throttles rAF (~1fps), which makes the page unresponsive
-// to CDP and stalls the e2e tests. setInterval is not throttled for background
-// tabs, and provides enough frame rate for the sim's fixed-timestep logic.
+// ── game loop ──────────────────────────────────────────────────────────────────
+// requestAnimationFrame is the preferred driver — vsync-aligned, full native
+// refresh rate. But headless Chromium misbehaves in both directions: it can
+// throttle rAF (~1fps) or, with vsync disabled, free-run it back-to-back and
+// starve the page's main thread (which stalls CDP and the e2e tests). So:
+// probe rAF's cadence with ~20 empty frames first. A sane display has a
+// median gap ≥ 3ms (≤ ~333Hz); anything faster is a free-running rAF and we
+// fall back to a fixed 30fps interval — the pre-rAF behaviour. A watchdog
+// interval also covers the throttled case (rAF stalls mid-run).
 let last = performance.now();
-function tick(): void {
-  const now = performance.now();
+let lastTickAt = -Infinity;
+function tick(now: number): void {
+  lastTickAt = now;
   const frameDelta = Math.min(0.1, (now - last) / 1000);
   last = now;
   clock.advance(frameDelta);
   const commander = sim.friendlies[0];
   if (commander) renderer.render(now / 1000, { pos: commander.pos, heading: commander.heading });
 }
-setInterval(tick, 1000 / 30); // 30 fps target
+function rafLoop(now: number): void {
+  tick(now);
+  requestAnimationFrame(rafLoop);
+}
+let driverChosen = false;
+function startIntervalDriver(): void {
+  driverChosen = true;
+  setInterval(() => tick(performance.now()), 1000 / 30);
+}
+const cadence: number[] = [];
+let probePrev = 0;
+function probe(now: number): void {
+  if (driverChosen) return; // probe timeout already picked the interval
+  if (probePrev > 0) cadence.push(now - probePrev);
+  probePrev = now;
+  if (cadence.length < 20) {
+    requestAnimationFrame(probe);
+    return;
+  }
+  driverChosen = true;
+  const sorted = [...cadence].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)]!;
+  if (median >= 3) {
+    requestAnimationFrame(rafLoop);
+    // Watchdog: if rAF later stalls (background tab), keep the sim ticking.
+    setInterval(() => {
+      const now = performance.now();
+      if (now - lastTickAt > 250) tick(now);
+    }, 1000 / 30);
+  } else {
+    startIntervalDriver();
+  }
+}
+requestAnimationFrame(probe);
+// If rAF never fires at all, pick the interval driver after half a second.
+setTimeout(() => {
+  if (!driverChosen) startIntervalDriver();
+}, 500);

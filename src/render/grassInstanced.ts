@@ -168,18 +168,15 @@ export class GrassField {
   }
 
   update(camera: THREE.Camera): void {
-    // Sync per-frame uniforms into every ring's material. The shared
-    // uniforms are updated by the renderer; here we push the values the
-    // grass shaders need that aren't shared (cam pos as a Vector3 for the
-    // uniform type).
+    // Sync per-frame uniforms once per ring — every mesh in a ring shares
+    // the ring's material, so per-mesh writes would redo the same work
+    // grid² times. (Cam pos re-typed as a Vector3 for the uniform type.)
     const camPos = this.shared.uCamPos.value;
     for (const ring of this.rings) {
-      for (const m of ring.meshes) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const u = (m.material as THREE.RawShaderMaterial).uniforms as any;
-        u.uCamPos.value.set(camPos.x, camPos.y, camPos.z);
-        u.uTime.value = this.shared.uTime.value;
-      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const u = ring.mat.uniforms as any;
+      u.uCamPos.value.set(camPos.x, camPos.y, camPos.z);
+      u.uTime.value = this.shared.uTime.value;
     }
     void camera;
   }
