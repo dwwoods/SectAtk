@@ -66,6 +66,14 @@ export const STANCE_HIT_MULT: Record<StanceName, number> = {
   crouch: 0.55,
   stand: 1.0,
 };
+/** Eye/muzzle height above the ground for each stance, metres. Used for
+    the 2.5D LOS ray — a prone man sees (and is seen) over far less terrain
+    than a standing one. */
+export const EYE_HEIGHT: Record<StanceName, number> = {
+  prone: 0.4,
+  crouch: 1.0,
+  stand: 1.6,
+};
 /** A man raising up to observe exposes himself — the "visible tell" of
     spending the risk currency (design doc §2.1). */
 export const OBSERVATION_EXPOSURE_MULTIPLIER = 1.6;

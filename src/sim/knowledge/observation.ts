@@ -16,7 +16,8 @@ import {
   updateFriendStatus,
   updateFriendKnownDead,
 } from './knowledge';
-import { losBetween } from '../los';
+import { soldierLos } from '../los';
+import type { Soldier } from '../soldier';
 
 /**
  * Process a SimEvent for observation. Called for each event the sim emits
@@ -49,15 +50,13 @@ export function processObservationEvent(
     position. Returns true if the observer can see the position. */
 function observerHasLos(
   sim: Simulation,
-  observerPos: { x: number; z: number },
-  targetPos: { x: number; z: number },
+  observer: Soldier,
+  target: Soldier,
 ): boolean {
-  const result = losBetween(
-    observerPos.x, observerPos.z, 1.6, // observer eye height ~1.6m
-    targetPos.x, targetPos.z, 0.5, // enemy torso height
-    sim.worldgen.heightfield, sim.worldgen.meadow, sim.worldgen.canopy,
-  );
-  return result.clear;
+  // Eye heights are stance- and terrain-aware — the ray starts at the
+  // observer's eyes and ends at the target's body, both above the ground
+  // they actually stand on.
+  return soldierLos(observer, target, sim.worldgen).clear;
 }
 
 function handleEnemyFired(
@@ -75,7 +74,7 @@ function handleEnemyFired(
   // deliberate physical act with a visible tell). The commander sees muzzle
   // flashes only while observing and with a clean sightline.
   if (!sim.observing.has(commander.id)) return false;
-  if (!observerHasLos(sim, commander.pos, enemyPos)) return false;
+  if (!observerHasLos(sim, commander, event.soldier)) return false;
 
   const evidence: Evidence = {
     kind: 'observation',
@@ -109,7 +108,7 @@ function handleFriendlyWounded(
   if (!commander) return false;
   if (!sim.observing.has(commander.id)) return false;
 
-  const hasLos = observerHasLos(sim, commander.pos, soldier.pos);
+  const hasLos = observerHasLos(sim, commander, soldier);
   if (!hasLos) return false;
 
   const evidence: Evidence = {

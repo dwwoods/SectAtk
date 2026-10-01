@@ -31,6 +31,7 @@ import type { FireIntent } from './config';
 import { createEnemySection, processEnemyFire, type EnemyShot } from './enemy/position';
 import { getExposureProfile, getCoverFactor } from './exposure';
 import { resolveShot } from './ballistics';
+import { soldierLos } from './los';
 import type { StanceName } from './types';
 import type { WorldGen } from '../worldgen';
 import { createKnowledge, type KnowledgeState, type Journal } from './knowledge/knowledge';
@@ -246,7 +247,7 @@ export class Simulation {
     // 2. Enemy fire.
     const enemyShots = processEnemyFire(
       this.enemySection, this.friendlies, this.rng,
-      this.worldgen.meadow, this.worldgen.coverDF, this.tick,
+      this.worldgen, this.tick,
     );
     for (const shot of enemyShots) {
       this.events.push({ type: 'enemy-fired', soldier: shot.source, target: shot.target, shot });
@@ -336,13 +337,15 @@ export class Simulation {
     this.pendingTier2 = type;
   }
 
+  /** Nearest alive enemy with a clear line of sight — you cannot shoot a
+      man you cannot see (terrain blocks the shot entirely). */
   nearestEnemy(from: Soldier): Soldier | null {
     let best: Soldier | null = null;
     let bestD = Infinity;
     for (const e of this.enemySection.soldiers) {
       if (!isAlive(e)) continue;
       const d = Math.hypot(e.pos.x - from.pos.x, e.pos.z - from.pos.z);
-      if (d < bestD) { bestD = d; best = e; }
+      if (d < bestD && soldierLos(from, e, this.worldgen).clear) { bestD = d; best = e; }
     }
     return best;
   }

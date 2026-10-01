@@ -16,8 +16,8 @@ import { createEnemy, isAlive, type Soldier } from '../soldier';
 import { getExposureProfile, getCoverFactor, type ExposureProfile } from '../exposure';
 import { resolveShot, type ShotParams } from '../ballistics';
 import { isPinned } from '../suppression';
-import type { Meadow } from '../../worldgen/meadow';
-import type { DistField } from '../../worldgen/distanceField';
+import { soldierLos } from '../los';
+import type { WorldGen } from '../../worldgen';
 
 export interface EnemySection {
   soldiers: Soldier[];
@@ -62,8 +62,7 @@ export function processEnemyFire(
   enemy: EnemySection,
   friendlies: Soldier[],
   rng: RngState,
-  meadow: Meadow,
-  coverDF: DistField,
+  worldgen: WorldGen,
   tick: number,
 ): EnemyShot[] {
   const shots: EnemyShot[] = [];
@@ -91,13 +90,14 @@ export function processEnemyFire(
       continue;
     }
 
-    // Find the nearest alive friendly.
+    // Find the nearest alive friendly with a clear line of sight — the
+    // enemy cannot shoot through terrain either.
     let nearest: Soldier | null = null;
     let nearestDist = Infinity;
     for (const f of friendlies) {
       if (!isAlive(f)) continue;
       const d = Math.hypot(f.pos.x - s.pos.x, f.pos.z - s.pos.z);
-      if (d < nearestDist) {
+      if (d < nearestDist && soldierLos(s, f, worldgen).clear) {
         nearestDist = d;
         nearest = f;
       }
@@ -118,7 +118,7 @@ export function processEnemyFire(
       nearest.stance,
       nearest.pos,
       false,
-      meadow,
+      worldgen.meadow,
     );
 
     const params: ShotParams = {
@@ -126,7 +126,7 @@ export function processEnemyFire(
       tx: nearest.pos.x, tz: nearest.pos.z,
       targetProfile: profile,
       range: nearestDist,
-      coverFactor: getCoverFactor(coverDF, nearest.pos.x, nearest.pos.z),
+      coverFactor: getCoverFactor(worldgen.coverDF, nearest.pos.x, nearest.pos.z),
       shooterSuppression: s.suppression,
     };
 

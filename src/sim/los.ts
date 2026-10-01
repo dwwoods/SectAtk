@@ -9,6 +9,8 @@
 import type { Heightfield } from '../worldgen/heightfield';
 import type { Meadow } from '../worldgen/meadow';
 import type { Canopy } from '../worldgen/foliage';
+import type { Soldier } from './soldier';
+import { EYE_HEIGHT } from './config';
 
 export interface LOSResult {
   /** True if the line is clear (terrain doesn't block). */
@@ -75,4 +77,20 @@ export function losBetween(
   }
 
   return { clear: true, concealment: maxConcealment, distance: dist };
+}
+
+/** LOS between two soldiers, eye heights derived from stance and terrain.
+    This is the gate on the fire paths: no clear line, no shot. */
+export function soldierLos(
+  a: Soldier,
+  b: Soldier,
+  world: { heightfield: Heightfield; meadow: Meadow; canopy: Canopy },
+): LOSResult {
+  const h0 = world.heightfield.heightAt(a.pos.x, a.pos.z) + EYE_HEIGHT[a.stance];
+  const h1 = world.heightfield.heightAt(b.pos.x, b.pos.z) + EYE_HEIGHT[b.stance];
+  return losBetween(
+    a.pos.x, a.pos.z, h0,
+    b.pos.x, b.pos.z, h1,
+    world.heightfield, world.meadow, world.canopy,
+  );
 }
