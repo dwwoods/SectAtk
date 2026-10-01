@@ -86,7 +86,7 @@ setInterval(() => {
   hud.textContent =
     `frame ${frameIntervalEma.toFixed(1)}ms (${(1000 / frameIntervalEma).toFixed(0)}fps)` +
     `  worst ${worstGapMs.toFixed(0)}ms\n` +
-    `render ${a.emaMs.toFixed(1)}ms  quality L${a.level}  upReq ${(a.upgradeReqMs / 1000).toFixed(0)}s`;
+    `ctrl ${a.emaMs.toFixed(1)}ms  quality L${a.level}  upReq ${(a.upgradeReqMs / 1000).toFixed(0)}s`;
   worstGapMs = 0;
 }, 500);
 
@@ -107,7 +107,7 @@ window.__sectatk = { sim, clock, renderer };
 // interval also covers the throttled case (rAF stalls mid-run).
 let last = performance.now();
 let lastTickAt = -Infinity;
-function tick(now: number): void {
+function tick(now: number, fromRaf = false): void {
   lastTickAt = now;
   const frameDelta = Math.min(0.1, (now - last) / 1000);
   const gapMs = (now - last);
@@ -116,10 +116,14 @@ function tick(now: number): void {
   last = now;
   clock.advance(frameDelta);
   const commander = sim.friendlies[0];
-  if (commander) renderer.render(now / 1000, { pos: commander.pos, heading: commander.heading });
+  // The adaptive controller only sees frames from a healthy, visible rAF
+  // driver — interval/watchdog cadences (headless, hidden tab) would read
+  // as over-budget and wrongly drain the quality level.
+  const adaptiveGap = fromRaf && !document.hidden ? gapMs : null;
+  if (commander) renderer.render(now / 1000, { pos: commander.pos, heading: commander.heading }, adaptiveGap);
 }
 function rafLoop(now: number): void {
-  tick(now);
+  tick(now, true);
   requestAnimationFrame(rafLoop);
 }
 let driverChosen = false;

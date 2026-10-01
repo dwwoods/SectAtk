@@ -1,7 +1,9 @@
 // Adaptive quality — the continuous downgrade loop prescribed by the
 // Phase 0 profiling notes (docs/phase0-fps-plateau.md): the reference's
 // one-shot autoQuality fired once at frame 260 and never re-evaluated;
-// this controller watches the render cost every frame and steps a quality
+// this controller watches the real frame interval every frame (NOT the
+// CPU time spent in render() — GPU work is async, so a GPU-bound machine
+// shows a tiny CPU cost while frames crawl) and steps a quality
 // level down when the budget is blown for a sustained period, and back up
 // when there is sustained headroom.
 //
@@ -19,7 +21,7 @@ export const MAX_QUALITY_LEVEL = 3;
     notes. The controller reacts to a smoothed cost, not single spikes. */
 export const FRAME_BUDGET_MS = 33;
 
-/** EMA smoothing factor for frame cost. */
+/** EMA smoothing factor for the frame interval. */
 const EMA_ALPHA = 0.1;
 /** Sustained time over budget before downgrading, ms. */
 const DOWNGRADE_AFTER_MS = 1000;
@@ -63,8 +65,8 @@ export function createAdaptiveState(): AdaptiveState {
 }
 
 /**
- * Feed one frame's render cost (ms). Returns the new level when the
- * controller decides to change it, null otherwise.
+ * Feed one frame's interval (ms since the previous frame). Returns the
+ * new level when the controller decides to change it, null otherwise.
  */
 export function stepAdaptive(s: AdaptiveState, frameCostMs: number): number | null {
   s.emaMs = s.emaMs === 0 ? frameCostMs : s.emaMs + EMA_ALPHA * (frameCostMs - s.emaMs);

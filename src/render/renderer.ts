@@ -119,8 +119,16 @@ export class SectAtkRenderer {
     this.applySizes();
   }
 
-  render(time: number, commander: { pos: { x: number; z: number }; heading: number }): void {
-    const t0 = performance.now();
+  /** Render one frame. `frameGapMs` is the time since the previous frame
+      — the adaptive controller's signal. It must be the real frame
+      interval, not CPU time spent inside this method: GPU work is async,
+      so a GPU-bound machine shows a tiny CPU cost while frames crawl.
+      Pass null to leave the controller idle (non-vsync drivers). */
+  render(
+    time: number,
+    commander: { pos: { x: number; z: number }; heading: number },
+    frameGapMs: number | null = null,
+  ): void {
 
     // Update shared uniforms.
     this.shared.uTime.value = time;
@@ -142,14 +150,16 @@ export class SectAtkRenderer {
     // Post process.
     this.post.process(this.sceneRT);
 
-    // Adaptive quality: feed this frame's render cost; step the level
-    // when the controller says so (sustained over-budget or headroom).
-    const newLevel = stepAdaptive(this.adaptive, performance.now() - t0);
-    if (newLevel !== null) {
-      // Level changes reallocate render targets — a deliberate, visible
-      // hitch. Logged so stutter reports can be correlated with them.
-      console.info(`[adaptive] quality level → ${newLevel} (ema ${this.adaptive.emaMs.toFixed(1)}ms)`);
-      this.applyQuality(newLevel);
+    // Adaptive quality: feed the frame interval; step the level when the
+    // controller says so (sustained over-budget or headroom).
+    if (frameGapMs !== null) {
+      const newLevel = stepAdaptive(this.adaptive, frameGapMs);
+      if (newLevel !== null) {
+        // Level changes reallocate render targets — a deliberate, visible
+        // hitch. Logged so stutter reports can be correlated with them.
+        console.info(`[adaptive] quality level → ${newLevel} (ema ${this.adaptive.emaMs.toFixed(1)}ms)`);
+        this.applyQuality(newLevel);
+      }
     }
   }
 }
