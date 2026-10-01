@@ -116,12 +116,24 @@ export class GrassField {
       const count = R.blades;
       const grid = Math.max(3, (Math.ceil(2 * R.far / R.chunk) + 1) | 1);
 
-      // Build one geometry with the instance buffer; all chunks in this ring
-      // share it.
+      // One geometry per ring, shared by every chunk — the instance
+      // buffer is Fisher-Yates shuffled precisely so a chunk can draw a
+      // prefix of it and still get a uniform random subset. Each chunk
+      // ISSUES only count*dens instances (set in onBeforeRender, the
+      // reference's trick — draw happens right after, so mutating the
+      // shared geometry's instanceCount per mesh is safe). Issuing the
+      // full buffer and letting the density law degenerate the surplus
+      // would still pay full vertex-shader price for every degenerate
+      // blade — ~225 chunks × full buffer × 8 verts — which is the
+      // reference's fps plateau reborn. chunkKeep (= dens) rides in
+      // modelMatrix[1][1] and compensates the in-shader density law.
       const geom = bladeGeo.clone();
       const ibuf = buildInstanceBuffer(count, 7000 + ri * 131);
       geom.setAttribute('iPos', new THREE.InstancedBufferAttribute(ibuf, 2, true));
-      geom.instanceCount = count;
+      // Blades spread over the chunk in-shader, not in the position
+      // attribute — a bounding sphere covering the chunk (plus blade
+      // height) makes frustum culling correct instead of center-only.
+      geom.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), R.chunk * 0.71 + 2);
 
       const uni: Record<string, IUniform> = {
         uTime: shared.uTime as IUniform,
@@ -136,7 +148,8 @@ export class GrassField {
         uMeanWind: shared.uMeanWind as IUniform,
         uWindLag: { value: new THREE.Vector2(2.6, 0) } as IUniform,
         uCull: { value: new THREE.Vector3(0, 0, -1) } as IUniform,
-      };      const mat = new THREE.RawShaderMaterial({
+      };
+      const mat = new THREE.RawShaderMaterial({
         vertexShader: VHEAD + GRASS_VS,
         fragmentShader: FHEAD + GRASS_FS,
         uniforms: uni,
@@ -150,15 +163,18 @@ export class GrassField {
         for (let i = 0; i < grid; i++) {
           const cx = (i - half) * R.chunk;
           const cz = (j - half) * R.chunk;
-          // Distance from nearest corner to the ring center.
-          const cd = Math.hypot(Math.abs(cx), Math.abs(cz));
-          const keep = R.dn / Math.max(cd, R.dn);
-          const keepSq = keep * keep;
-          // Gard: chunkKeep rides in modelMatrix[1][1] (the Y scale).
+          // Density from chunk-centre distance, the reference's law:
+          // dens = min(1, (dn/d)^1.45), floored at 24 issued instances.
+          const cd = Math.max(Math.hypot(cx, cz), R.dn);
+          const dens = Math.min(1, Math.pow(R.dn / cd, 1.45));
+
           const mesh = new THREE.Mesh(geom, mat);
           mesh.position.set(cx, 0, cz);
-          mesh.scale.y = Math.max(0.01, keepSq);
+          // chunkKeep rides in modelMatrix[1][1] (the Y scale).
+          mesh.scale.y = Math.max(0.01, dens);
           mesh.frustumCulled = true;
+          mesh.userData.count = Math.max(24, Math.round(count * dens));
+          mesh.onBeforeRender = setChunkInstanceCount;
           this.group.add(mesh);
           meshes.push(mesh);
         }
@@ -203,12 +219,20 @@ export class GrassField {
 
 interface RingState {
   meshes: THREE.Mesh[];
-  geom: THREE.BufferGeometry;
+  geom: THREE.InstancedBufferGeometry;
   mat: THREE.RawShaderMaterial;
   R: RingDef;
   grid: number;
 }
 
+/** onBeforeRender for every grass chunk: the ring's geometry is shared,
+    so each chunk installs its own issued-instance count just before its
+    draw call — the reference's per-chunk density without per-chunk
+    geometries or uniform uploads. */
+function setChunkInstanceCount(this: THREE.Mesh): void {
+  (this.geometry as THREE.InstancedBufferGeometry).instanceCount =
+    this.userData.count as number;
+}
 // ── height texture (for grass VS to sample ground height) ─────────────────
 function makeHeightTexture(hf: Heightfield): THREE.DataTexture {
   const RES = 256;
