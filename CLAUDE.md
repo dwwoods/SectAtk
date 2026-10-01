@@ -60,6 +60,7 @@ they're adopted, phase by phase (design doc §7.2).
     foliage.ts        (stub — Phase 2)
     atmosphere.ts     (stub — Phase 2)
     post.ts           (stub — Phase 2)
+    adaptiveQuality.ts frame-budget → quality level (pure controller; renderer maps the levers)
     camera/
       springArm.ts    (stub — Phase 3)
     soldier/
@@ -131,10 +132,10 @@ Phase 2 render/Phase 3/Phase 6-9: render, audio, UI, behaviour modules are stubs
 
 ## Running the gates
 
-- `npm run test` — vitest, 74 tests across 10 files (determinism gates,
+- `npm run test` — vitest, 83 tests across 12 files (determinism gates,
   ammo conservation, wound table, suppression model, worldgen consistency,
   knowledge-absence assertions, firefight resolution, exposure/LOS,
-  ballistics).
+  ballistics, LOS-gates-fire, adaptive quality controller).
 - `npm run typecheck` — `tsc --noEmit`, strict mode (see `tsconfig.json`;
   `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes` are on
   deliberately — the determinism gate depends on catching undefined-access

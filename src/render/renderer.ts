@@ -11,6 +11,12 @@ import { Atmosphere } from './atmosphere';
 import { PostPipeline } from './post';
 import { SpringArm } from './camera/springArm';
 import type { WorldGen } from '../worldgen';
+import {
+  createAdaptiveState,
+  stepAdaptive,
+  MAX_QUALITY_LEVEL,
+  type AdaptiveState,
+} from './adaptiveQuality';
 
 export class SectAtkRenderer {
   readonly renderer: THREE.WebGLRenderer;
@@ -22,6 +28,10 @@ export class SectAtkRenderer {
   private atmosphere: Atmosphere;
   private sceneRT: THREE.WebGLRenderTarget;
   private worldgen: WorldGen;
+  /** Adaptive-quality controller state (readable for debug overlays). */
+  readonly adaptive: AdaptiveState = createAdaptiveState();
+  /** Scene/post render scale for the current quality level (1 = native). */
+  private renderScale = 1;
 
   constructor(worldgen: WorldGen) {
     this.worldgen = worldgen;
@@ -74,17 +84,43 @@ export class SectAtkRenderer {
     this.post.flags.bloom = false; // bloom off by default — toggleable
 
     // Resize handler.
-    window.addEventListener('resize', () => {
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      this.renderer.setSize(w, h);
-      this.sceneRT.setSize(w, h);
-      this.post.resize(w, h);
-      this.springArm.resize();
-    });
+    window.addEventListener('resize', () => this.applySizes());
+  }
+
+  /** (Re)apply canvas, scene-RT, and post sizes at the current render
+      scale. The canvas stays native; the scene and post chain render at
+      renderScale and the composite upscales — the supersample lever from
+      the reference, run backwards. */
+  private applySizes(): void {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    this.renderer.setSize(w, h);
+    const sw = Math.max(4, Math.round(w * this.renderScale));
+    const sh = Math.max(4, Math.round(h * this.renderScale));
+    this.sceneRT.setSize(sw, sh);
+    this.post.resize(sw, sh);
+    this.springArm.resize();
+  }
+
+  /** Map a quality level onto the render levers. Tier values are
+      provisional until the real-hardware profiling pass (Phase 9). */
+  private applyQuality(level: number): void {
+    const tiers: Array<{ scale: number; cosmetics: boolean; grassRings: number }> = [
+      { scale: 0.5, cosmetics: false, grassRings: 1 }, // 0 — floor
+      { scale: 0.7, cosmetics: false, grassRings: 1 },
+      { scale: 0.85, cosmetics: true, grassRings: 2 },
+      { scale: 1.0, cosmetics: true, grassRings: 2 }, // MAX — full
+    ];
+    const t = tiers[Math.max(0, Math.min(MAX_QUALITY_LEVEL, level))]!;
+    this.renderScale = t.scale;
+    this.post.flags.grain = t.cosmetics;
+    this.post.flags.vignette = t.cosmetics;
+    this.grass.setMaxRings(t.grassRings);
+    this.applySizes();
   }
 
   render(time: number, commander: { pos: { x: number; z: number }; heading: number }): void {
+    const t0 = performance.now();
 
     // Update shared uniforms.
     this.shared.uTime.value = time;
@@ -105,5 +141,10 @@ export class SectAtkRenderer {
 
     // Post process.
     this.post.process(this.sceneRT);
+
+    // Adaptive quality: feed this frame's render cost; step the level
+    // when the controller says so (sustained over-budget or headroom).
+    const newLevel = stepAdaptive(this.adaptive, performance.now() - t0);
+    if (newLevel !== null) this.applyQuality(newLevel);
   }
 }

@@ -181,6 +181,16 @@ export class GrassField {
     void camera;
   }
 
+  /** Show only the innermost `count` rings — the adaptive-quality lever.
+      Outer rings are the distant, cheap-to-lose detail. */
+  setMaxRings(count: number): void {
+    for (let i = 0; i < this.rings.length; i++) {
+      const visible = i < count;
+      const ring = this.rings[i]!;
+      for (const m of ring.meshes) m.visible = visible;
+    }
+  }
+
   dispose(): void {
     this.group.clear();
     for (const ring of this.rings) {
