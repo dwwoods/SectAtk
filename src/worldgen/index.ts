@@ -18,6 +18,11 @@ export interface WorldGen {
   canopy: Canopy;
   /** Distance to nearest cover feature (terrain fold, copse edge). */
   coverDF: DistField;
+  /** Wind direction, radians, deterministic from the seed — the axis
+      thrown smoke drifts along (design doc §2.5). Derived from a hash
+      independent of the noise streams the rasters consume, so adding it
+      never perturbs heightfield/meadow/canopy determinism. */
+  windAngle: number;
 }
 
 export function bakeWorld(seed = 20260728): WorldGen {
@@ -50,6 +55,18 @@ export function bakeWorld(seed = 20260728): WorldGen {
   }
 
   const coverDF = makeDF(coverPoints, 128);
+  const windAngle = windAngleFromSeed(seed);
 
-  return { heightfield, meadow, canopy, coverDF };
+  return { heightfield, meadow, canopy, coverDF, windAngle };
+}
+
+/** Deterministic wind direction from the seed, radians in [0, 2π). A
+    small integer hash — kept independent of the noise toolkit's own RNG
+    streams so the rasters' determinism tests are unaffected by this. */
+function windAngleFromSeed(seed: number): number {
+  let h = (seed ^ 0x9e3779b9) >>> 0;
+  h = Math.imul(h ^ (h >>> 16), 0x45d9f3b) >>> 0;
+  h = Math.imul(h ^ (h >>> 16), 0x45d9f3b) >>> 0;
+  h = (h ^ (h >>> 16)) >>> 0;
+  return (h / 0xffffffff) * Math.PI * 2;
 }

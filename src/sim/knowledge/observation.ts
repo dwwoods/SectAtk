@@ -56,7 +56,7 @@ function observerHasLos(
   // Eye heights are stance- and terrain-aware — the ray starts at the
   // observer's eyes and ends at the target's body, both above the ground
   // they actually stand on.
-  return soldierLos(observer, target, sim.worldgen).clear;
+  return soldierLos(observer, target, sim.worldgen, sim.smokeClouds).clear;
 }
 
 function handleEnemyFired(

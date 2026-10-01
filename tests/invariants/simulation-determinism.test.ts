@@ -45,6 +45,8 @@ const ORDER_LOG: Array<{ atTick: number; order: Order }> = [
   { atTick: 900, order: { type: 'sound-off' } },
   { atTick: 1500, order: { type: 'mag-check' } },
   { atTick: 2000, order: { type: 'set-fire-intent', intent: 'hold' } },
+  { atTick: 2200, order: { type: 'smoke' } },
+  { atTick: 2600, order: { type: 'withdraw', rally: { x: -150, z: 100 } } },
 ];
 
 // Apply an order when the clock reaches exactly `atTick`. This is the step
@@ -107,6 +109,14 @@ function serializeSim(sim: Simulation): string {
     sim.tier2BusyTicks, sim.pendingTier2 === 'sound-off' ? 1 : sim.pendingTier2 === 'mag-check' ? 2 : 0,
     sim.mission.status === 'none' ? 0 : sim.mission.status === 'active' ? 1 : sim.mission.status === 'taken' ? 2 : 3,
     sim.mission.holdTicks,
+    sim.withdrawalPlan ? sim.withdrawalPlan.released : -1,
+    sim.withdrawalPlan ? (sim.withdrawalPlan.halted ? 1 : 0) : -1,
+    sim.smokeInventory,
+    sim.noContactTicks,
+    sim.smokeClouds.length,
+    sim.smokeClouds[0]?.pos.x ?? -9999,
+    sim.smokeClouds[0]?.pos.z ?? -9999,
+    sim.smokeClouds[0]?.remaining ?? -9999,
   ];
 
   // Friendlies and enemies: full state.

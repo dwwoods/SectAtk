@@ -31,13 +31,19 @@ import {
   MISSION_HOLD_SECONDS,
   MISSION_MIN_EFFECTIVES,
   PINNED_SUPPRESSION,
+  SMOKE_GRENADES_PER_SECTION,
+  SMOKE_DURATION_SECONDS,
+  SMOKE_RADIUS,
+  SMOKE_THROW_DIST,
+  SMOKE_DRIFT_SPEED,
+  OUT_OF_CONTACT_SECONDS,
 } from './config';
 import type { FireIntent } from './config';
 import { createEnemySection, processEnemyFire } from './enemy/position';
 import { getExposureProfile, getCoverFactor } from './exposure';
 import { resolveShot } from './ballistics';
 import { soldierLos } from './los';
-import type { StanceName, Vec2 } from './types';
+import type { StanceName, Vec2, SmokeCloud } from './types';
 import type { WorldGen } from '../worldgen';
 import { createKnowledge, type KnowledgeState, type Journal } from './knowledge/knowledge';
 import { processObservationEvent } from './knowledge/observation';
@@ -47,7 +53,13 @@ import { TIER2_ORDER_DURATION } from './config';
 import { processFireControl } from './behaviour/fireControl';
 import { processMovement } from './behaviour/individual';
 import { formBaseline } from './behaviour/baseline';
-import { sectionWithdraw, sectionAssault } from './behaviour/section';
+import {
+  sectionWithdraw,
+  sectionAssault,
+  processWithdrawal,
+  isWithdrawalFinished,
+  type WithdrawalPlan,
+} from './behaviour/section';
 
 // ── events ─────────────────────────────────────────────────────────────────
 // The truth stream emitted per tick. Knowledge (Phase 5) consumes these to
@@ -69,7 +81,8 @@ export type SimEvent =
   | { type: 'suppressed'; soldierId: string; amount: number }
   | { type: 'ammo'; soldierId: string; event: AmmoEvent }
   | { type: 'ran-dry'; side: SoldierSide }
-  | { type: 'mission'; status: 'taken' | 'failed' };
+  | { type: 'mission'; status: 'taken' | 'failed' }
+  | { type: 'out-of-contact' };
 
 // ── orders ─────────────────────────────────────────────────────────────────
 // The commander's intent surface. Phase 4 implements stance/fire intent;
@@ -83,6 +96,7 @@ export type Order =
   | { type: 'halt'; manId: string }
   | { type: 'form-baseline' }
   | { type: 'withdraw'; rally: Vec2 }
+  | { type: 'smoke' }
   | { type: 'assault' }
   | { type: 'observe'; manId?: string }
   | { type: 'stop-observe'; manId?: string }
@@ -158,6 +172,18 @@ export class Simulation {
   /** The commander's standing fire intent for the section. The 2IC
       translates it to per-man rates each tick — while he can (§4.2). */
   sectionIntent: FireIntent = 'hold';
+  /** Sequenced withdrawal plan, or null when no withdrawal is in progress
+      (design doc §2.5). */
+  withdrawalPlan: WithdrawalPlan | null = null;
+  /** Consecutive ticks with no enemy LOS to any friendly — the out-of-
+      contact clock, only meaningful while a withdrawal is in progress. */
+  noContactTicks = 0;
+  /** Smoke grenades left in the section's inventory — his own kit, read
+      directly by the UI (not a Knowledge belief). */
+  smokeInventory = SMOKE_GRENADES_PER_SECTION;
+  /** Active smoke clouds, drifting with the wind each tick. */
+  smokeClouds: SmokeCloud[] = [];
+  private nextSmokeId = 0;
 
   constructor(scenario: Scenario, worldgen: WorldGen, seed = 20260728) {
     this.rng = createRng(seed);
@@ -214,15 +240,55 @@ export class Simulation {
         if (believed) formBaseline(this.friendlies, believed);
         break;
       }
-      case 'withdraw':
-        sectionWithdraw(this.friendlies, order.rally);
+      case 'withdraw': {
+        // Doctrinal withdrawal: sequenced release, furthest-from-the-
+        // threat first (§2.5). The commander re-issuing 'withdraw' mid-
+        // withdrawal replans from current positions — this is how a
+        // halted (out-of-contact) plan resumes once he re-decides.
+        const believed = this.knowledge.enemy.position;
+        const plan = sectionWithdraw(this.friendlies, order.rally, believed);
+        this.withdrawalPlan = plan.entries.length > 0 ? plan : null;
+        this.noContactTicks = 0;
         break;
+      }
       case 'assault': {
         // Battle drill 5 — the attack. The section fights THROUGH the
         // position as the commander BELIEVES it to be (§9.4: no order on
         // information he does not hold). Enemy not located → no assault.
         const believed = this.knowledge.enemy.position;
         if (believed) sectionAssault(this.friendlies, believed);
+        break;
+      }
+      case 'smoke': {
+        // The commander throws smoke toward the believed threat (§2.5).
+        // Predicated on Knowledge like form-baseline/assault — and on
+        // actually having one left; the order no-ops at zero, inventory
+        // never goes negative.
+        if (this.smokeInventory <= 0) break;
+        const believed = this.knowledge.enemy.position;
+        if (!believed) break;
+        let cx = 0;
+        let cz = 0;
+        let n = 0;
+        for (const f of this.friendlies) {
+          if (!isAlive(f)) continue;
+          cx += f.pos.x;
+          cz += f.pos.z;
+          n++;
+        }
+        if (n === 0) break;
+        cx /= n;
+        cz /= n;
+        const dx = believed.x - cx;
+        const dz = believed.z - cz;
+        const d = Math.hypot(dx, dz) || 1;
+        this.smokeInventory--;
+        this.smokeClouds.push({
+          id: `smoke-${this.nextSmokeId++}`,
+          pos: { x: cx + (dx / d) * SMOKE_THROW_DIST, z: cz + (dz / d) * SMOKE_THROW_DIST },
+          radius: SMOKE_RADIUS,
+          remaining: SMOKE_DURATION_SECONDS,
+        });
         break;
       }
       case 'move': {
@@ -291,6 +357,11 @@ export class Simulation {
     //    rates and rotates men out to re-bomb. Lapses silently with him.
     processFireControl(this.friendlies, this.sectionIntent);
 
+    // 0.4. Withdrawal — sequenced release, furthest-from-the-threat first
+    //      (§2.5). Released men get a moveTarget; processMovement below
+    //      still arbitrates every actual bound.
+    processWithdrawal(this.withdrawalPlan, this.friendlies);
+
     // 0.5. Individual fire & movement — bounds gated by the two doctrinal
     //      conditions (one foot on the ground / no move without fire).
     processMovement(this.friendlies, dt);
@@ -339,7 +410,7 @@ export class Simulation {
     // 2. Enemy fire.
     const enemyShots = processEnemyFire(
       this.enemySection, this.friendlies, this.rng,
-      this.worldgen, this.tick,
+      this.worldgen, this.tick, this.smokeClouds,
     );
     for (const shot of enemyShots) {
       this.events.push({ type: 'enemy-fired', soldierId: shot.source.id, targetId: shot.target.id });
@@ -395,6 +466,52 @@ export class Simulation {
     // 5.5. Mission — ground must be taken (battle drills 5 & 6).
     this.stepMission();
 
+    // 5.6. Smoke clouds — drift with the wind, expire (§2.5). If the wind
+    //      carries one off the line between the section and the threat,
+    //      it was wasted — that is the design, not a bug.
+    {
+      const windAngle = this.worldgen.windAngle;
+      const driftX = Math.cos(windAngle) * SMOKE_DRIFT_SPEED * dt;
+      const driftZ = Math.sin(windAngle) * SMOKE_DRIFT_SPEED * dt;
+      this.smokeClouds = this.smokeClouds.filter((cloud) => {
+        cloud.remaining -= dt;
+        if (cloud.remaining <= 0) return false;
+        cloud.pos.x += driftX;
+        cloud.pos.z += driftZ;
+        return true;
+      });
+    }
+
+    // 5.7. Out-of-contact — a withdrawal in progress halts here if no enemy
+    //      has had LOS to any friendly for OUT_OF_CONTACT_SECONDS. Men
+    //      mid-bound finish it, then hold; the plan does NOT auto-continue
+    //      to the rally — the commander re-decides (a fresh 'withdraw'
+    //      order replans whoever has not yet arrived).
+    if (this.withdrawalPlan && !this.withdrawalPlan.halted) {
+      if (isWithdrawalFinished(this.withdrawalPlan, this.friendlies)) {
+        this.withdrawalPlan = null;
+      } else {
+        let contact = false;
+        for (const e of this.enemySection.soldiers) {
+          if (!isAlive(e)) continue;
+          for (const f of this.friendlies) {
+            if (!isAlive(f)) continue;
+            if (soldierLos(e, f, this.worldgen, this.smokeClouds).clear) { contact = true; break; }
+          }
+          if (contact) break;
+        }
+        if (contact) {
+          this.noContactTicks = 0;
+        } else {
+          this.noContactTicks++;
+          if (this.noContactTicks >= Math.round(OUT_OF_CONTACT_SECONDS / FIXED_DT)) {
+            this.withdrawalPlan.halted = true;
+            this.events.push({ type: 'out-of-contact' });
+          }
+        }
+      }
+    }
+
     // 6. Process pending tier-2 orders (the time cost of information, §3.3).
     //    While a sound-off/mag-check is in flight the commander is busy and
     //    cannot observe or issue another one.
@@ -440,7 +557,7 @@ export class Simulation {
     for (const e of this.enemySection.soldiers) {
       if (!isAlive(e)) continue;
       const d = Math.hypot(e.pos.x - from.pos.x, e.pos.z - from.pos.z);
-      if (d < bestD && soldierLos(from, e, this.worldgen).clear) { bestD = d; best = e; }
+      if (d < bestD && soldierLos(from, e, this.worldgen, this.smokeClouds).clear) { bestD = d; best = e; }
     }
     return best;
   }

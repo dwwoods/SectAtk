@@ -35,6 +35,7 @@ export class OrdersPanel {
   private intentButtons = new Map<FireIntent, HTMLButtonElement>();
   private observing = false;
   private timer: ReturnType<typeof setInterval>;
+  private smokeButton!: HTMLButtonElement;
 
   constructor(container: HTMLElement, sim: Simulation) {
     this.sim = sim;
@@ -75,6 +76,10 @@ export class OrdersPanel {
       this.button('WITHDRAW!', () => {
         sim.applyOrder({ type: 'withdraw', rally: this.rallyPoint() });
       }),
+      this.smokeButton = this.button('SMOKE!', () => {
+        sim.applyOrder({ type: 'smoke' });
+        this.update();
+      }, 'btn-smoke'),
     ]);
 
     container.appendChild(this.root);
@@ -149,6 +154,12 @@ export class OrdersPanel {
     }
     const ob = this.root.querySelector<HTMLButtonElement>('#btn-observe');
     if (ob) ob.textContent = this.observing ? 'DOWN (stop observing)' : 'OBSERVE';
+
+    // His own kit, not a Knowledge belief — read straight from the sim.
+    const smoke = this.sim.smokeInventory;
+    this.smokeButton.textContent = `SMOKE! (${smoke})`;
+    this.smokeButton.style.opacity = smoke > 0 ? '1' : '0.4';
+    this.smokeButton.style.cursor = smoke > 0 ? 'pointer' : 'default';
   }
 
   dispose(): void {

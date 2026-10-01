@@ -18,6 +18,7 @@ function stubWorld(ridgeHeight: number): WorldGen {
     meadow: { concealmentAt: () => 0, heightAt: () => 0.3 },
     canopy: { densityAt: () => 0 },
     coverDF: { query: () => ({ d: 999, t: 0 }) },
+    windAngle: 0,
   };
 }
 

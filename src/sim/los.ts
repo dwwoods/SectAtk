@@ -10,6 +10,7 @@ import type { Heightfield } from '../worldgen/heightfield';
 import type { Meadow } from '../worldgen/meadow';
 import type { Canopy } from '../worldgen/foliage';
 import type { Soldier } from './soldier';
+import type { SmokeCloud } from './types';
 import { EYE_HEIGHT } from './config';
 
 export interface LOSResult {
@@ -37,11 +38,21 @@ export function losBetween(
   heightfield: Heightfield,
   meadow: Meadow,
   canopy: Canopy,
+  clouds: readonly SmokeCloud[] = [],
 ): LOSResult {
   const dx = x1 - x0;
   const dz = z1 - z0;
   const dist = Math.hypot(dx, dz);
   if (dist < 0.5) return { clear: true, concealment: 0, distance: dist };
+
+  // Smoke blocks LOS outright. The cloud is treated as a cylinder in the
+  // xz plane (height is irrelevant — the cloud fills the air column): if
+  // the sightline's 2D segment passes within its radius, it's blocked.
+  for (const cloud of clouds) {
+    if (segmentIntersectsCircle(x0, z0, x1, z1, cloud.pos.x, cloud.pos.z, cloud.radius)) {
+      return { clear: false, concealment: 1, distance: dist };
+    }
+  }
 
   const steps = Math.max(3, Math.ceil(dist / 2)); // sample every 2 m
   let maxConcealment = 0;
@@ -79,12 +90,37 @@ export function losBetween(
   return { clear: true, concealment: maxConcealment, distance: dist };
 }
 
+/** Segment-circle intersection in the xz plane — does the sightline pass
+    within `r` of (cx, cz) at any point along it? */
+function segmentIntersectsCircle(
+  x0: number, z0: number, x1: number, z1: number,
+  cx: number, cz: number, r: number,
+): boolean {
+  const dx = x1 - x0;
+  const dz = z1 - z0;
+  const fx = x0 - cx;
+  const fz = z0 - cz;
+  const a = dx * dx + dz * dz;
+  if (a === 0) return Math.hypot(fx, fz) <= r;
+  const b = 2 * (fx * dx + fz * dz);
+  const c = fx * fx + fz * fz - r * r;
+  const disc = b * b - 4 * a * c;
+  if (disc < 0) return false;
+  const sqrtDisc = Math.sqrt(disc);
+  const t1 = (-b - sqrtDisc) / (2 * a);
+  const t2 = (-b + sqrtDisc) / (2 * a);
+  if (t1 >= 0 && t1 <= 1) return true;
+  if (t2 >= 0 && t2 <= 1) return true;
+  return t1 < 0 && t2 > 1; // segment entirely inside the circle
+}
+
 /** LOS between two soldiers, eye heights derived from stance and terrain.
     This is the gate on the fire paths: no clear line, no shot. */
 export function soldierLos(
   a: Soldier,
   b: Soldier,
   world: { heightfield: Heightfield; meadow: Meadow; canopy: Canopy },
+  clouds: readonly SmokeCloud[] = [],
 ): LOSResult {
   const h0 = world.heightfield.heightAt(a.pos.x, a.pos.z) + EYE_HEIGHT[a.stance];
   const h1 = world.heightfield.heightAt(b.pos.x, b.pos.z) + EYE_HEIGHT[b.stance];
@@ -92,5 +128,6 @@ export function soldierLos(
     a.pos.x, a.pos.z, h0,
     b.pos.x, b.pos.z, h1,
     world.heightfield, world.meadow, world.canopy,
+    clouds,
   );
 }

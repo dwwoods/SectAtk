@@ -7,7 +7,7 @@
 // This is the most productive small mechanic in the design — the enemy's
 // endurance is a number the player can never count.
 
-import type { Vec2 } from '../types';
+import type { Vec2, SmokeCloud } from '../types';
 import type { RngState } from '../rng';
 import { nextFloat } from '../rng';
 import { ENEMY_COUNT, ENEMY_INITIAL_ROUNDS, ENEMY_ROF, MAG_ROUNDS } from '../config';
@@ -64,6 +64,7 @@ export function processEnemyFire(
   rng: RngState,
   worldgen: WorldGen,
   tick: number,
+  smokeClouds: readonly SmokeCloud[] = [],
 ): EnemyShot[] {
   const shots: EnemyShot[] = [];
 
@@ -97,7 +98,7 @@ export function processEnemyFire(
     for (const f of friendlies) {
       if (!isAlive(f)) continue;
       const d = Math.hypot(f.pos.x - s.pos.x, f.pos.z - s.pos.z);
-      if (d < nearestDist && soldierLos(s, f, worldgen).clear) {
+      if (d < nearestDist && soldierLos(s, f, worldgen, smokeClouds).clear) {
         nearestDist = d;
         nearest = f;
       }

@@ -171,6 +171,27 @@ export const VOICE_RANGE = 300;
 /** Distance at which voice clarity halves (attenuation model). */
 export const VOICE_HALF_DISTANCE = 100;
 
+
+// ── withdrawal — sequenced release, smoke, and the re-decision (design
+//    doc §2.5, §8) ──────────────────────────────────────────────────────
+/** Smoke grenades carried by the section. Provisional. */
+export const SMOKE_GRENADES_PER_SECTION = 2;
+/** Seconds a thrown smoke cloud blocks LOS before it thins out. Provisional. */
+export const SMOKE_DURATION_SECONDS = 60;
+/** Metres — the smoke cloud's LOS-blocking footprint. Provisional. */
+export const SMOKE_RADIUS = 8;
+/** Metres the commander can throw a smoke grenade toward the believed
+    threat. Provisional. */
+export const SMOKE_THROW_DIST = 15;
+/** Metres/second a smoke cloud drifts with the wind. If the wind carries it
+    off the line between the section and the threat, it was wasted — that
+    is the design (§2.5), not a bug. Provisional. */
+export const SMOKE_DRIFT_SPEED = 1.0;
+/** Seconds with no enemy LOS to any friendly before the section counts as
+    out of contact. A withdrawal in progress halts here — men finish their
+    current bound and hold — and does NOT auto-continue to the rally; the
+    commander re-decides. */
+export const OUT_OF_CONTACT_SECONDS = 10;
 // ── wound / casualty (design doc §3.2) ─────────────────────────────────────
 /** Probability a minor wound still produces a cry (a "wounded" man may or
     may not call out). */
