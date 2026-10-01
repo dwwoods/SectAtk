@@ -24,7 +24,8 @@ export function processCryEvent(
   knowledge: KnowledgeState,
   journal: Journal,
 ): boolean {
-  const soldier = event.soldier;
+  const soldier = sim.world.getEntity(event.soldierId);
+  if (!soldier) return false;
   const commander = sim.friendlies[0];
   if (!commander) return false;
 

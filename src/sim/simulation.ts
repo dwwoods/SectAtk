@@ -28,7 +28,7 @@ import {
   TWO_IC_EXTRA_BANDOLIER,
 } from './config';
 import type { FireIntent } from './config';
-import { createEnemySection, processEnemyFire, type EnemyShot } from './enemy/position';
+import { createEnemySection, processEnemyFire } from './enemy/position';
 import { getExposureProfile, getCoverFactor } from './exposure';
 import { resolveShot } from './ballistics';
 import { soldierLos } from './los';
@@ -43,17 +43,22 @@ import { TIER2_ORDER_DURATION } from './config';
 // ── events ─────────────────────────────────────────────────────────────────
 // The truth stream emitted per tick. Knowledge (Phase 5) consumes these to
 // update the commander's picture. Tests assert on them directly.
+//
+// Events are plain serializable data — soldier IDS, never live Soldier
+// references — so the stream can be journaled and replayed (AAR, Phase 8)
+// and no consumer can reach through an event to mutate ground truth.
+// Consumers resolve ids via sim.world.getEntity().
 
 export type SimEvent =
-  | { type: 'friendly-fired'; soldier: Soldier; target: Soldier }
-  | { type: 'enemy-fired'; soldier: Soldier; target: Soldier; shot: EnemyShot }
-  | { type: 'friendly-wounded'; soldier: Soldier; wound: Wound; silent: boolean }
-  | { type: 'enemy-wounded'; soldier: Soldier; wound: Wound }
-  | { type: 'enemy-killed'; soldier: Soldier; silent: boolean }
-  | { type: 'friendly-killed'; soldier: Soldier; silent: boolean }
-  | { type: 'cry'; soldier: Soldier; wound: Wound }
-  | { type: 'suppressed'; soldier: Soldier; amount: number }
-  | { type: 'ammo'; soldier: Soldier; event: AmmoEvent }
+  | { type: 'friendly-fired'; soldierId: string; targetId: string }
+  | { type: 'enemy-fired'; soldierId: string; targetId: string }
+  | { type: 'friendly-wounded'; soldierId: string; wound: Wound; silent: boolean }
+  | { type: 'enemy-wounded'; soldierId: string; wound: Wound }
+  | { type: 'enemy-killed'; soldierId: string; silent: boolean }
+  | { type: 'friendly-killed'; soldierId: string; silent: boolean }
+  | { type: 'cry'; soldierId: string; wound: Wound }
+  | { type: 'suppressed'; soldierId: string; amount: number }
+  | { type: 'ammo'; soldierId: string; event: AmmoEvent }
   | { type: 'ran-dry'; side: SoldierSide };
 
 // ── orders ─────────────────────────────────────────────────────────────────
@@ -233,15 +238,15 @@ export class Simulation {
       if (result.hit && result.wound) {
         target.wound = result.wound;
         const silent = result.wound.severity === 'fatal-cns' || result.wound.location === 'throat';
-        this.events.push({ type: 'enemy-wounded', soldier: target, wound: result.wound });
+        this.events.push({ type: 'enemy-wounded', soldierId: target.id, wound: result.wound });
         if (target.wound.severity === 'fatal-cns' || target.wound.severity === 'mortal') {
-          this.events.push({ type: 'enemy-killed', soldier: target, silent });
+          this.events.push({ type: 'enemy-killed', soldierId: target.id, silent });
         }
       } else if (result.suppressionAdded > 0) {
         target.suppression = Math.min(1, target.suppression + result.suppressionAdded);
-        this.events.push({ type: 'suppressed', soldier: target, amount: result.suppressionAdded });
+        this.events.push({ type: 'suppressed', soldierId: target.id, amount: result.suppressionAdded });
       }
-      this.events.push({ type: 'friendly-fired', soldier: f, target });
+      this.events.push({ type: 'friendly-fired', soldierId: f.id, targetId: target.id });
     }
 
     // 2. Enemy fire.
@@ -250,23 +255,23 @@ export class Simulation {
       this.worldgen, this.tick,
     );
     for (const shot of enemyShots) {
-      this.events.push({ type: 'enemy-fired', soldier: shot.source, target: shot.target, shot });
+      this.events.push({ type: 'enemy-fired', soldierId: shot.source.id, targetId: shot.target.id });
       const r = shot.result;
       if (r.hit && r.wound) {
         const silent = r.wound.severity === 'fatal-cns' || r.wound.location === 'throat';
-        this.events.push({ type: 'friendly-wounded', soldier: shot.target, wound: r.wound, silent });
+        this.events.push({ type: 'friendly-wounded', soldierId: shot.target.id, wound: r.wound, silent });
         // A wounded man who can shout cries — the audible channel (Phase 5)
         // consumes this. The silent flag is the mechanic: no event = no
         // sound = the commander never learns.
         if (!silent) {
-          this.events.push({ type: 'cry', soldier: shot.target, wound: r.wound });
+          this.events.push({ type: 'cry', soldierId: shot.target.id, wound: r.wound });
         }
         if (!isAlive(shot.target)) {
-          this.events.push({ type: 'friendly-killed', soldier: shot.target, silent });
+          this.events.push({ type: 'friendly-killed', soldierId: shot.target.id, silent });
         }
       } else if (r.suppressionAdded > 0) {
         shot.target.suppression = Math.min(1, shot.target.suppression + r.suppressionAdded);
-        this.events.push({ type: 'suppressed', soldier: shot.target, amount: r.suppressionAdded });
+        this.events.push({ type: 'suppressed', soldierId: shot.target.id, amount: r.suppressionAdded });
       }
     }
 
@@ -274,12 +279,12 @@ export class Simulation {
     const moraleScaledDecay = (s: Soldier) => SUPPRESSION_DECAY * (0.5 + 0.5 * s.morale);
     for (const f of this.friendlies) {
       // Did a friendly get wounded/killed this tick within morale range?
-      const nearbyCasualty = this.events.some(
-        (ev) =>
-          (ev.type === 'friendly-wounded' || ev.type === 'friendly-killed') &&
-          ev.soldier !== f &&
-          Math.hypot(ev.soldier.pos.x - f.pos.x, ev.soldier.pos.z - f.pos.z) < MORALE_CASUALTY_RANGE,
-      );
+      const nearbyCasualty = this.events.some((ev) => {
+        if (ev.type !== 'friendly-wounded' && ev.type !== 'friendly-killed') return false;
+        if (ev.soldierId === f.id) return false;
+        const cas = this.world.getEntity(ev.soldierId);
+        return !!cas && Math.hypot(cas.pos.x - f.pos.x, cas.pos.z - f.pos.z) < MORALE_CASUALTY_RANGE;
+      });
       updateMorale(f, nearbyCasualty, dt);
       f.suppression = Math.max(0, f.suppression - moraleScaledDecay(f) * dt);
     }
@@ -291,7 +296,7 @@ export class Simulation {
     // 4. Ammo processing (reloads, re-bombing).
     for (const f of this.friendlies) {
       const ammoEvents = processAmmoTick(f, dt);
-      for (const ev of ammoEvents) this.events.push({ type: 'ammo', soldier: f, event: ev });
+      for (const ev of ammoEvents) this.events.push({ type: 'ammo', soldierId: f.id, event: ev });
     }
     for (const e of this.enemySection.soldiers) {
       processAmmoTick(e, dt);

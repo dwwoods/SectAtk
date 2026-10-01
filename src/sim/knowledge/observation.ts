@@ -68,13 +68,15 @@ function handleEnemyFired(
   const commander = sim.friendlies[0];
   if (!commander) return false;
 
-  const enemyPos = { x: event.soldier.pos.x, z: event.soldier.pos.z };
+  const shooter = sim.world.getEntity(event.soldierId);
+  if (!shooter) return false;
+  const enemyPos = { x: shooter.pos.x, z: shooter.pos.z };
 
   // Observation is an ACT (design doc §2.1: raising up to observe is a
   // deliberate physical act with a visible tell). The commander sees muzzle
   // flashes only while observing and with a clean sightline.
   if (!sim.observing.has(commander.id)) return false;
-  if (!observerHasLos(sim, commander, event.soldier)) return false;
+  if (!observerHasLos(sim, commander, shooter)) return false;
 
   const evidence: Evidence = {
     kind: 'observation',
@@ -95,7 +97,8 @@ function handleFriendlyWounded(
   knowledge: KnowledgeState,
   journal: Journal,
 ): boolean {
-  const soldier = event.soldier;
+  const soldier = sim.world.getEntity(event.soldierId);
+  if (!soldier) return false;
   const wound = event.wound;
 
   // A wound is OBSERVED only if the commander is looking at the man when it
