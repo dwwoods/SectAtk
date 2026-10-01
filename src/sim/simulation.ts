@@ -26,6 +26,11 @@ import {
   MAGS_PER_MAN,
   BANDOLIER_ROUNDS,
   TWO_IC_EXTRA_BANDOLIER,
+  MISSION_OBJECTIVE_RADIUS,
+  MISSION_HOLD_MEN,
+  MISSION_HOLD_SECONDS,
+  MISSION_MIN_EFFECTIVES,
+  PINNED_SUPPRESSION,
 } from './config';
 import type { FireIntent } from './config';
 import { createEnemySection, processEnemyFire } from './enemy/position';
@@ -42,7 +47,7 @@ import { TIER2_ORDER_DURATION } from './config';
 import { processFireControl } from './behaviour/fireControl';
 import { processMovement } from './behaviour/individual';
 import { formBaseline } from './behaviour/baseline';
-import { sectionWithdraw } from './behaviour/section';
+import { sectionWithdraw, sectionAssault } from './behaviour/section';
 
 // ── events ─────────────────────────────────────────────────────────────────
 // The truth stream emitted per tick. Knowledge (Phase 5) consumes these to
@@ -63,7 +68,8 @@ export type SimEvent =
   | { type: 'cry'; soldierId: string; wound: Wound }
   | { type: 'suppressed'; soldierId: string; amount: number }
   | { type: 'ammo'; soldierId: string; event: AmmoEvent }
-  | { type: 'ran-dry'; side: SoldierSide };
+  | { type: 'ran-dry'; side: SoldierSide }
+  | { type: 'mission'; status: 'taken' | 'failed' };
 
 // ── orders ─────────────────────────────────────────────────────────────────
 // The commander's intent surface. Phase 4 implements stance/fire intent;
@@ -77,6 +83,7 @@ export type Order =
   | { type: 'halt'; manId: string }
   | { type: 'form-baseline' }
   | { type: 'withdraw'; rally: Vec2 }
+  | { type: 'assault' }
   | { type: 'observe'; manId?: string }
   | { type: 'stop-observe'; manId?: string }
   | { type: 'sound-off' }
@@ -107,6 +114,20 @@ export interface Scenario {
   enemyPosition: { x: number; z: number };
   enemySpread: number;
   enemyHeading: number;
+  /** The ground that must be taken (design doc §13.1). Omitted = free
+      play, no mission state. */
+  objective?: { pos: Vec2; radius?: number };
+  /** Rally point for a doctrinal withdrawal. Omitted = the UI computes
+      one to the section's rear. */
+  rally?: Vec2;
+}
+
+export type MissionStatus = 'none' | 'active' | 'taken' | 'failed';
+
+export interface MissionState {
+  status: MissionStatus;
+  /** Consecutive ticks the objective has been held (reorg clock). */
+  holdTicks: number;
 }
 
 export class Simulation {
@@ -129,6 +150,11 @@ export class Simulation {
   tier2BusyTicks = 0;
   /** The pending tier-2 order type, set when queued. */
   pendingTier2: 'sound-off' | 'mag-check' | null = null;
+  /** Mission — ground must be taken. Truth lives here; what the
+      commander can READ of it is his own men's reports and his eyes. */
+  readonly mission: MissionState = { status: 'none', holdTicks: 0 };
+  readonly objective: { pos: Vec2; radius: number } | null = null;
+  readonly rally: Vec2 | null = null;
   /** The commander's standing fire intent for the section. The 2IC
       translates it to per-man rates each tick — while he can (§4.2). */
   sectionIntent: FireIntent = 'hold';
@@ -160,6 +186,15 @@ export class Simulation {
     this.knowledge = createKnowledge(
       this.friendlies.map((f) => ({ id: f.id, name: f.name })),
     );
+
+    if (scenario.objective) {
+      this.objective = {
+        pos: { ...scenario.objective.pos },
+        radius: scenario.objective.radius ?? MISSION_OBJECTIVE_RADIUS,
+      };
+      this.mission.status = 'active';
+    }
+    if (scenario.rally) this.rally = { ...scenario.rally };
   }
 
   applyOrder(order: Order): void {
@@ -182,6 +217,14 @@ export class Simulation {
       case 'withdraw':
         sectionWithdraw(this.friendlies, order.rally);
         break;
+      case 'assault': {
+        // Battle drill 5 — the attack. The section fights THROUGH the
+        // position as the commander BELIEVES it to be (§9.4: no order on
+        // information he does not hold). Enemy not located → no assault.
+        const believed = this.knowledge.enemy.position;
+        if (believed) sectionAssault(this.friendlies, believed);
+        break;
+      }
       case 'move': {
         const man = this.world.getEntity(order.manId);
         if (man && man.side === 'friendly' && isAlive(man) && canMove(man)) {
@@ -349,6 +392,9 @@ export class Simulation {
     // 5. Firefight resolution.
     this.stepFirefight(enemyShots.length);
 
+    // 5.5. Mission — ground must be taken (battle drills 5 & 6).
+    this.stepMission();
+
     // 6. Process pending tier-2 orders (the time cost of information, §3.3).
     //    While a sound-off/mag-check is in flight the commander is busy and
     //    cannot observe or issue another one.
@@ -399,6 +445,46 @@ export class Simulation {
     return best;
   }
 
+  /** Mission — ground must be taken (design doc §13.1; battle drills
+      5 & 6). TAKEN when MISSION_HOLD_MEN are on the objective and every
+      enemy on it can no longer resist (dead, out of the fight, or
+      pinned), held continuously for MISSION_HOLD_SECONDS — the reorg.
+      FAILED when the section drops below MISSION_MIN_EFFECTIVES able to
+      fight: combat-ineffective, the attack cannot be pressed. */
+  private stepMission(): void {
+    if (this.mission.status !== 'active' || !this.objective) return;
+
+    let effectives = 0;
+    for (const f of this.friendlies) {
+      if (isAlive(f) && canFight(f)) effectives++;
+    }
+    if (effectives < MISSION_MIN_EFFECTIVES) {
+      this.mission.status = 'failed';
+      this.events.push({ type: 'mission', status: 'failed' });
+      return;
+    }
+
+    const { pos, radius } = this.objective;
+    let holding = 0;
+    for (const f of this.friendlies) {
+      if (!isAlive(f)) continue;
+      if (Math.hypot(f.pos.x - pos.x, f.pos.z - pos.z) <= radius) holding++;
+    }
+    let resistance = 0;
+    for (const e of this.enemySection.soldiers) {
+      if (isAlive(e) && canFight(e) && e.suppression < PINNED_SUPPRESSION) resistance++;
+    }
+
+    if (holding >= MISSION_HOLD_MEN && resistance === 0) {
+      this.mission.holdTicks++;
+      if (this.mission.holdTicks >= Math.round(MISSION_HOLD_SECONDS / FIXED_DT)) {
+        this.mission.status = 'taken';
+        this.events.push({ type: 'mission', status: 'taken' });
+      }
+    } else {
+      this.mission.holdTicks = 0;
+    }
+  }
   private stepFirefight(enemyShotsThisTick: number): void {
     const ff = this.firefight;
     ff.enemyShotsThisWindow += enemyShotsThisTick;

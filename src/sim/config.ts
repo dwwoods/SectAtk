@@ -147,6 +147,24 @@ export const WITHDRAW_STRENGTH_ESTIMATE = 8;
     this. Provisional. */
 export const WITHDRAW_EFFECTIVES_MIN = 5;
 
+// ── mission — ground must be taken (design doc §13.1, option 1) ────────
+// The reason to press: the enemy position sits on ground the section has
+// been ordered to take. Battle drills 5 & 6 — the attack and the reorg:
+// taken means fought through, occupied, and HELD with the enemy on it
+// neutralised. Withdrawing keeps the section alive and loses the mission.
+/** Metres around the objective point that count as "on the position". */
+export const MISSION_OBJECTIVE_RADIUS = 15;
+/** Men who must be on the objective for it to count as held (reorg). */
+export const MISSION_HOLD_MEN = 4;
+/** Seconds the objective must be continuously held to be TAKEN. */
+export const MISSION_HOLD_SECONDS = 10;
+/** Below this many men able to fight, the section is combat-ineffective
+    and the mission has FAILED. */
+export const MISSION_MIN_EFFECTIVES = 3;
+/** Metres past the believed position an assault fights through to — the
+    drill is through the objective to the far side, not onto the lip. */
+export const ASSAULT_THROUGH_DEPTH = 10;
+
 // ── voice (design doc §3.1, tier 2) ────────────────────────────────────────
 /** Max range for a sound-off / mag-check answer to be heard, metres. */
 export const VOICE_RANGE = 300;

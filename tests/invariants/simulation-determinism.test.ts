@@ -105,6 +105,8 @@ function serializeSim(sim: Simulation): string {
     sim.tick, sim.rng.state, sim.firefight.won ? 1 : 0,
     sim.firefight.enemyShotsThisWindow, sim.firefight.windowTicks, sim.firefight.sustainedLowTicks,
     sim.tier2BusyTicks, sim.pendingTier2 === 'sound-off' ? 1 : sim.pendingTier2 === 'mag-check' ? 2 : 0,
+    sim.mission.status === 'none' ? 0 : sim.mission.status === 'active' ? 1 : sim.mission.status === 'taken' ? 2 : 3,
+    sim.mission.holdTicks,
   ];
 
   // Friendlies and enemies: full state.
