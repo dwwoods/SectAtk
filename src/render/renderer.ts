@@ -1,0 +1,109 @@
+// Main renderer — owns the THREE.WebGLRenderer, scene, camera, and all
+// render modules (terrain, grass, atmosphere, post). Reads the WorldGen
+// (single source of truth for looks AND tactics) and follows the
+// Simulation's commander position.
+
+import * as THREE from 'three';
+import { type SharedUniforms } from './glsl';
+import { buildTerrainMesh } from './terrain';
+import { GrassField } from './grassInstanced';
+import { Atmosphere } from './atmosphere';
+import { PostPipeline } from './post';
+import { SpringArm } from './camera/springArm';
+import type { WorldGen } from '../worldgen';
+
+export class SectAtkRenderer {
+  readonly renderer: THREE.WebGLRenderer;
+  readonly scene: THREE.Scene;
+  readonly springArm: SpringArm;
+  readonly post: PostPipeline;
+  private shared: SharedUniforms;
+  private grass: GrassField;
+  private atmosphere: Atmosphere;
+  private sceneRT: THREE.WebGLRenderTarget;
+  private worldgen: WorldGen;
+
+  constructor(worldgen: WorldGen) {
+    this.worldgen = worldgen;
+    // WebGL renderer.
+    this.renderer = new THREE.WebGLRenderer({
+      canvas: document.querySelector<HTMLCanvasElement>('#game-canvas') ?? undefined,
+      antialias: false,
+    });
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.setClearColor(0x000000, 0);
+
+    // Scene.
+    this.scene = new THREE.Scene();
+
+    // Shared uniforms (one set for all shaders).
+    this.shared = {
+      uTime: { value: 0 },
+      uCamPos: { value: { x: 0, y: 0, z: 0 } },
+      uSunDir: { value: { x: -0.45, y: 0.3, z: -0.84 } },
+      uMeanWind: { value: { x: 3.0, y: 0.5 } },
+      uFogMul: { value: 0.8 },
+    };
+
+    // Camera: spring arm follows the commander.
+    this.springArm = new SpringArm();
+    this.scene.add(this.springArm.camera);
+
+    // Terrain.
+    const terrain = buildTerrainMesh(worldgen.heightfield, this.shared);
+    this.scene.add(terrain);
+
+    // Grass.
+    this.grass = new GrassField(this.scene, worldgen.heightfield, worldgen.meadow, this.shared);
+
+    // Atmosphere.
+    this.atmosphere = new Atmosphere(this.scene, this.shared);
+
+    // Render target for scene → post chain. UnsignedByteType: SwiftShader's
+    // WebGL2 doesn't reliably support rendering to half-float, and the tone
+    // mapping in post handles the range anyway.
+    this.sceneRT = new THREE.WebGLRenderTarget(
+      window.innerWidth,
+      window.innerHeight,
+      { type: THREE.UnsignedByteType },
+    );
+
+    // Post.
+    this.post = new PostPipeline(this.renderer, window.innerWidth, window.innerHeight);
+    this.post.flags.bloom = false; // bloom off by default — toggleable
+
+    // Resize handler.
+    window.addEventListener('resize', () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      this.renderer.setSize(w, h);
+      this.sceneRT.setSize(w, h);
+      this.post.resize(w, h);
+      this.springArm.resize();
+    });
+  }
+
+  render(time: number, commander: { pos: { x: number; z: number }; heading: number }): void {
+
+    // Update shared uniforms.
+    this.shared.uTime.value = time;
+    this.shared.uCamPos.value = { x: commander.pos.x, y: 0, z: commander.pos.z };
+
+    // Sync grass uniforms per-frame.
+    this.grass.update(this.springArm.camera);
+
+    // Camera follows the commander.
+    this.springArm.update(commander.pos.x, 0, commander.pos.z, commander.heading, this.worldgen.heightfield);
+
+    // Update sky position.
+    this.atmosphere.update(this.springArm.camera);
+
+    // Render scene to RT.
+    this.renderer.setRenderTarget(this.sceneRT);
+    this.renderer.render(this.scene, this.springArm.camera);
+
+    // Post process.
+    this.post.process(this.sceneRT);
+  }
+}

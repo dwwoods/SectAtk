@@ -9,6 +9,7 @@ export default tseslint.config(
       'reference/**',
       'reference-camera-spike.html',
       '.dependency-cruiser.cjs',
+      'scripts/**', // dev/automation scripts, not production code
     ],
   },
   js.configs.recommended,

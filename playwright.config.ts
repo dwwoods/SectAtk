@@ -9,5 +9,13 @@ export default defineConfig({
   },
   use: {
     baseURL: 'http://localhost:4173',
+    launchOptions: {
+      args: [
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--disable-gpu-vsync',
+      ],
+    },
   },
 });

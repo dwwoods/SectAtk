@@ -14,3 +14,6 @@ playwright/.cache/
 
 # Phase 0 throwaway camera-spike copy — notes get carried forward, not this file
 reference-camera-spike.html
+
+# Generated curve data for the Phase 9 tuning pass — regenerate, don't commit
+artifacts/
