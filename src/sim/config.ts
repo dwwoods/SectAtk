@@ -137,6 +137,15 @@ export const BOUND_LENGTH = 8;
 /** Seconds a man stays down between his own bounds (others bound while
     he covers). */
 export const BOUND_PAUSE = 2;
+/** Metres between men on a baseline / withdrawal line. */
+export const BASELINE_SPACING = 5;
+
+// ── commander's appreciation (design doc §8, decision tree) ────────────
+/** Withdraw when the BELIEVED enemy count reaches this. Provisional. */
+export const WITHDRAW_STRENGTH_ESTIMATE = 8;
+/** Withdraw when the commander believes he has fewer effectives than
+    this. Provisional. */
+export const WITHDRAW_EFFECTIVES_MIN = 5;
 
 // ── voice (design doc §3.1, tier 2) ────────────────────────────────────────
 /** Max range for a sound-off / mag-check answer to be heard, metres. */

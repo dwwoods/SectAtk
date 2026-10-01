@@ -41,6 +41,8 @@ import { processSoundOff, processMagCheck } from './knowledge/elicited';
 import { TIER2_ORDER_DURATION } from './config';
 import { processFireControl } from './behaviour/fireControl';
 import { processMovement } from './behaviour/individual';
+import { formBaseline } from './behaviour/baseline';
+import { sectionWithdraw } from './behaviour/section';
 
 // ── events ─────────────────────────────────────────────────────────────────
 // The truth stream emitted per tick. Knowledge (Phase 5) consumes these to
@@ -73,6 +75,8 @@ export type Order =
   | { type: 'stance'; manId: string; stance: StanceName }
   | { type: 'move'; manId: string; target: Vec2 }
   | { type: 'halt'; manId: string }
+  | { type: 'form-baseline' }
+  | { type: 'withdraw'; rally: Vec2 }
   | { type: 'observe'; manId?: string }
   | { type: 'stop-observe'; manId?: string }
   | { type: 'sound-off' }
@@ -166,6 +170,17 @@ export class Simulation {
         // the 2IC is down, nobody is managing fire: rates stop being
         // adjusted and the order changes nothing (design doc §4.2).
         this.sectionIntent = order.intent;
+        break;
+      case 'form-baseline': {
+        // The commander forms a baseline on the threat AS HE BELIEVES IT
+        // — the order is predicated on Knowledge, never ground truth
+        // (§9.4). No located enemy, no bearing, no baseline.
+        const believed = this.knowledge.enemy.position;
+        if (believed) formBaseline(this.friendlies, believed);
+        break;
+      }
+      case 'withdraw':
+        sectionWithdraw(this.friendlies, order.rally);
         break;
       case 'move': {
         const man = this.world.getEntity(order.manId);
