@@ -140,6 +140,39 @@ export const BOUND_PAUSE = 2;
 /** Metres between men on a baseline / withdrawal line. */
 export const BASELINE_SPACING = 5;
 
+// ── contact reaction — Battle Drill 2, "reaction to effective fire" ────────
+// Dash – Down – Crawl – Observe – Sights – Fire. Triggered off a near-miss
+// or a nearby casualty (design doc §8, Phase 7 ext.). Involuntary — every
+// man reacts, so this is exempt from MAX_SIMULTANEOUS_MOVERS, but it must
+// stay short: dash + crawl, never a sustained manoeuvre.
+/** Metres covered in the initial dash, away/perpendicular from the
+    incoming fire. Provisional. */
+export const CONTACT_DASH_DIST = 4;
+/** Further metres crawled after going prone, so the man is not on the
+    spot he was seen going down on. Provisional. */
+export const CONTACT_CRAWL_DIST = 2.5;
+/** Leopard-crawl speed, m/s — slower than the standing bound speed above.
+    Provisional. */
+export const CRAWL_SPEED = 0.6;
+/** Metres within which a casualty's cry/fall also triggers a contact
+    reaction in a nearby, uninjured man ("within earshot"). Provisional. */
+export const CONTACT_EARSHOT_RANGE = 50;
+/** Seconds before a man who has just finished a contact reaction may
+    react again — the drill is for FIRST contact, not every subsequent
+    near miss of an ongoing firefight. Provisional. */
+export const CONTACT_REACT_COOLDOWN = 20;
+// ── speculative area fire — Battle Drill 2 (design doc §8, Phase 7 ext.) ──
+// A man with no LOS'd target, in contact, who believes he knows the
+// enemy's position fires at the believed area. Suppression only — no
+// hits are rolled in MVP — scaled by how close the belief is to the
+// truth, falling off to zero at AREA_FIRE_RADIUS.
+/** Metres from the believed point within which area fire still
+    suppresses an enemy soldier. Provisional. */
+export const AREA_FIRE_RADIUS = 15;
+/** Area fire's suppression relative to a direct-fire near miss — well
+    under 1: suppressing a guess is much less effective than suppressing
+    a located man. Provisional. */
+export const AREA_FIRE_SUPPRESS_FACTOR = 0.3;
 // ── commander's appreciation (design doc §8, decision tree) ────────────
 /** Withdraw when the BELIEVED enemy count reaches this. Provisional. */
 export const WITHDRAW_STRENGTH_ESTIMATE = 8;
