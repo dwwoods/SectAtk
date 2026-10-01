@@ -145,7 +145,7 @@ export function updateFriendAmmo(
   const before = b.ammoLow;
   b.ammoLow = ammoLow;
   appendJournalEntry(journal, {
-    tick: evidence.tick, subject: soldierId, field: 'ammo',
+    tick: evidence.tick, subject: soldierId, field: 'ammoLow',
     before, after: ammoLow, evidence,
   });
 }
@@ -173,17 +173,13 @@ export function updateEnemyPosition(
   position: Vec2,
   evidence: Evidence,
 ): void {
+  // Position ONLY. The firing state is a separate belief with its own
+  // journal entry (updateEnemyFiring) — writing it here as a side effect
+  // would bypass the journal and break AAR derivability
+  // (tests/invariants/aar-replay.test.ts caught exactly that).
   const before = state.enemy.position;
-  if (sameVec(before, position)) {
-    // Position unchanged, but the firing observation is still evidence —
-    // refresh the firing state.
-    state.enemy.firing = true;
-    state.enemy.lastFiredTick = evidence.tick;
-    return;
-  }
+  if (sameVec(before, position)) return;
   state.enemy.position = { ...position };
-  state.enemy.firing = true;
-  state.enemy.lastFiredTick = evidence.tick;
   appendJournalEntry(journal, {
     tick: evidence.tick, subject: 'enemy', field: 'position',
     before: before ? { ...before } : null, after: { ...position }, evidence,

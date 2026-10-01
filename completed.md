@@ -118,6 +118,52 @@ docs/iteration-notes.md.
 - Knowledge: absence assertions (#3, #4, #4b, #6, #7).
 - Lint, typecheck, boundary: all clean.
 
+## Perf & correctness pass (post-Phase 5)
+- Dead-code sweep (22 unused exports; Phase 7/8 symbols returned with
+  their systems below).
+- LOS wired into both fire paths — shots no longer resolve through
+  terrain; absolute-height bug in observation fixed. EYE_HEIGHT per
+  stance.
+- SimEvents made serializable (soldier ids, not live references).
+- Game loop: rAF with cadence probe + headless fallback; grass uniforms
+  per ring.
+- Grass porting bug fixed: each chunk issued the ring's FULL instance
+  buffer (~300M vert invocations/frame). Per-chunk count*dens via
+  onBeforeRender, the reference's exact scheme. 10fps → 74fps at full
+  quality on target hardware.
+- Adaptive quality: frame-interval-driven controller (EMA, hysteresis,
+  oscillation backoff), render scale + post flags + grass rings levers.
+  F9 debug HUD.
+
+## Phase 7 — Behaviour & fire control (machine-side done)
+- **fireControl**: commander sets intent; 2IC translates to per-man
+  rates with ammo discipline (low mags → 'hold'), rotates men out to
+  re-bomb (most-depleted first, capped). Lapses silently when he cannot
+  fight — §9.4 "no notification on lapse" assert-tested.
+- **individual**: fire & movement in bounds. One-foot-on-the-ground
+  (≤ MAX_SIMULTANEOUS_MOVERS) and no-move-without-fire
+  (≥ COVERING_FIRE_MIN shooters down) gate every bound; property-tested
+  every tick across 100 seeds (the Phase 7 machine gate). Pinned men
+  stay down; immobile casualties keep their position and orders never
+  take.
+- **baseline / section**: shake out into an extended line on the
+  BELIEVED threat bearing (order no-ops until the enemy is located in
+  Knowledge); doctrinal withdrawal to a rally line, immobile casualties
+  left where they fell.
+- **decisionTree**: data-driven appreciation over KnowledgeState only
+  (signature-enforced §9.4). Root: "withdraw if en not located".
+  Hold/Withdraw wired; attack branches with the assault phases.
+- Orders added: move, halt, form-baseline, withdraw.
+- Human movement review pending (§9.5).
+
+## Phase 8 — AAR replay core (done)
+- beliefAtTick folds the journal into a belief snapshot; replay of a
+  busy 90s firefight must equal the live Knowledge byte-for-byte.
+- The derivability test caught and fixed three journal-bypass bugs on
+  day one: updateEnemyPosition side-writing firing/lastFiredTick
+  unjournaled, ammoLow journaled under the wrong field name, knownDead
+  implying a status write.
+
 ## Next
 - Phase 2 renderer port (terrain, grass, atmosphere, post) — needs human
   visual gate.

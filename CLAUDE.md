@@ -39,13 +39,13 @@ they're adopted, phase by phase (design doc §7.2).
       audible.ts      tier 1 — wound-gated cries, attenuated
       elicited.ts     tier 2 — sound off (three-valued), mag check
     /behaviour
-      fireControl.ts  2IC: intent → per-man rates, re-bombing rotation (stub — Phase 7)
-      individual.ts   (stub — Phase 7)
-      pair.ts         (stub — Phase 7)
-      fireteam.ts     (stub — Phase 7)
-      baseline.ts     (stub — Phase 7)
-      section.ts      (stub — Phase 7)
-      decisionTree.ts (stub — Phase 7)
+      fireControl.ts  2IC: intent → per-man rates with ammo discipline, re-bomb rotation, silent lapse
+      individual.ts   fire & movement bounds — one-foot-on-ground + no-move-without-fire gates
+      pair.ts         (stub — assault phases, post-MVP)
+      fireteam.ts     (stub — assault phases, post-MVP)
+      baseline.ts     shake out into an extended line on the believed threat bearing
+      section.ts      section verbs — doctrinal withdrawal to a rally line
+      decisionTree.ts commander's appreciation — data-driven, Knowledge-only, Hold/Withdraw wired
   /worldgen     # single source of truth for looks AND tactics
     noise.ts          gradient noise, fbm, ridged (ported from reference)
     config.ts         world size (600m), resolutions
@@ -74,7 +74,7 @@ they're adopted, phase by phase (design doc §7.2).
     contact.ts        (stub — Phase 8)
     timeControls.ts   (stub — Phase 8)
   /aar
-    replay.ts         (stub — Phase 8)
+    replay.ts         beliefAtTick: journal → belief snapshot (derivability invariant)
 /tests
   /invariants
     determinism.test.ts           Phase 1 dummy-entity determinism (4 tests)
@@ -84,6 +84,12 @@ they're adopted, phase by phase (design doc §7.2).
     suppression.test.ts           curve shape, decay, pin (9 tests)
     worldgen.test.ts              determinism, bounds, slope→concealment (7 tests)
     knowledge-absence.test.ts     assertions #3, #4, #6, #7 (5 tests)
+    los-fire.test.ts              LOS gates fire — ridge stops everything (2 tests)
+    adaptive-quality.test.ts      quality controller behaviour (8 tests)
+    fire-control.test.ts          2IC layer incl. silent-lapse assert (6 tests)
+    movement.test.ts              doctrinal invariants, 100-seed sweep (6 tests)
+    section-behaviour.test.ts     appreciation + section verbs (7 tests)
+    aar-replay.test.ts            journal derivability (3 tests)
   /scenarios
     smoke.spec.ts                 Playwright e2e — app boots
   /visual                         (not yet populated)
@@ -95,8 +101,14 @@ Phases 0 & 1: done (camera spike pass, repo foundation, determinism gate).
 Phase 2 worldgen: done (noise toolkit, heightfield, meadow, canopy, DF).
 Phase 4: done (simulation core — soldier, ammo, wounds, exposure, ballistics, LOS, suppression, enemy, simulation orchestration, firefight resolution).
 Phase 5: done (knowledge, journal, observation, audible, elicited, seven assertions).
-Phase 2 render/Phase 3/Phase 6-9: render, audio, UI, behaviour modules are stubs
-  (the architecture skeleton — no later phase needs to restructure).
+Phase 7: done machine-side (2IC fire control, individual F&M + doctrinal
+  invariants across 100 seeds, baseline, withdrawal, decision tree over
+  Knowledge only). Human movement review pending. pair/fireteam are
+  post-MVP assault-phase stubs.
+Phase 8: AAR replay core done (journal derivability). UI, markers pending.
+Phase 2 render: terrain/grass/atmosphere/post ported + adaptive quality;
+  visual gate (human) pending. Phase 3/6: camera spring arm ported;
+  soldier renderer and audio are stubs.
 
 ## Non-negotiable rules
 
@@ -132,10 +144,11 @@ Phase 2 render/Phase 3/Phase 6-9: render, audio, UI, behaviour modules are stubs
 
 ## Running the gates
 
-- `npm run test` — vitest, 83 tests across 12 files (determinism gates,
+- `npm run test` — vitest, 106 tests across 16 files (determinism gates,
   ammo conservation, wound table, suppression model, worldgen consistency,
   knowledge-absence assertions, firefight resolution, exposure/LOS,
-  ballistics, LOS-gates-fire, adaptive quality controller).
+  ballistics, LOS-gates-fire, adaptive quality, fire control, movement
+  doctrine, section behaviour, AAR derivability).
 - `npm run typecheck` — `tsc --noEmit`, strict mode (see `tsconfig.json`;
   `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes` are on
   deliberately — the determinism gate depends on catching undefined-access
