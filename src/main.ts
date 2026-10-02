@@ -11,7 +11,9 @@ import { Simulation, type Scenario } from './sim/simulation';
 import { Clock } from './sim/clock';
 import { SectAtkRenderer } from './render/renderer';
 import { OrdersPanel } from './ui/orders';
-
+import { computeDensity } from './audio/fireDensity';
+import { FireCues } from './audio/cues';
+import { ScreenEdgeOverlay } from './audio/screenEdge';
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) throw new Error('#app root element missing');
 
@@ -57,6 +59,34 @@ const clock = new Clock((dt) => sim.step(dt));
 // ── renderer ───────────────────────────────────────────────────────────────
 const renderer = new SectAtkRenderer(worldgen);
 
+// ── tier-3 ambient fire-density (audio + visual fallback, design doc §10) ──
+// Presentation only: driven from sim state each render frame, never writes
+// back into it. Muted by default — enable() is wired to a user gesture
+// (the M key) below, per the WebAudio autoplay policy.
+const fireCues = new FireCues();
+const fireOverlay = new ScreenEdgeOverlay();
+fireOverlay.mount();
+let audioMuted = true;
+
+const muteIndicator = document.createElement('div');
+muteIndicator.style.position = 'fixed';
+muteIndicator.style.bottom = '16px';
+muteIndicator.style.left = '16px';
+muteIndicator.style.color = '#ddd';
+muteIndicator.style.font = '14px monospace';
+muteIndicator.style.opacity = '0';
+muteIndicator.style.transition = 'opacity 400ms linear';
+muteIndicator.style.pointerEvents = 'none';
+app.appendChild(muteIndicator);
+let muteIndicatorTimer: ReturnType<typeof setTimeout> | null = null;
+function flashMuteIndicator(text: string): void {
+  muteIndicator.textContent = text;
+  muteIndicator.style.opacity = '1';
+  if (muteIndicatorTimer) clearTimeout(muteIndicatorTimer);
+  muteIndicatorTimer = setTimeout(() => {
+    muteIndicator.style.opacity = '0';
+  }, 1500);
+}
 // ── orders UI — verbal-idiom orders grouped by the battle drills ────────
 new OrdersPanel(app, sim);
 
@@ -85,6 +115,19 @@ hud.style.cssText =
 app.appendChild(hud);
 window.addEventListener('keydown', (e) => {
   if (e.code === 'F9') hud.style.display = hud.style.display === 'none' ? 'block' : 'none';
+});
+window.addEventListener('keydown', (e) => {
+  if (e.code !== 'KeyM') return;
+  audioMuted = !audioMuted;
+  if (audioMuted) {
+    fireCues.disable();
+    fireOverlay.disable();
+    flashMuteIndicator('AUDIO: MUTED');
+  } else {
+    fireCues.enable();
+    fireOverlay.enable();
+    flashMuteIndicator('AUDIO: ON');
+  }
 });
 let frameIntervalEma = 16.7;
 let worstGapMs = 0;
@@ -127,7 +170,14 @@ function tick(now: number, fromRaf = false): void {
   // driver — interval/watchdog cadences (headless, hidden tab) would read
   // as over-budget and wrongly drain the quality level.
   const adaptiveGap = fromRaf && !document.hidden ? gapMs : null;
-  if (commander) renderer.render(now / 1000, { pos: commander.pos, heading: commander.heading }, adaptiveGap);
+  if (commander) {
+    renderer.render(now / 1000, { pos: commander.pos, heading: commander.heading }, adaptiveGap);
+
+    const allSoldiers = [...sim.friendlies, ...sim.enemySection.soldiers];
+    const density = computeDensity(allSoldiers, commander.pos);
+    fireCues.update(density, commander.heading, frameDelta);
+    fireOverlay.update(density, commander.heading, frameDelta);
+  }
 }
 function rafLoop(now: number): void {
   tick(now, true);
