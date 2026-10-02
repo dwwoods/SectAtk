@@ -33,18 +33,19 @@ they're adopted, phase by phase (design doc §7.2).
     /enemy
       position.ts     static concealed position, finite ammo, suppression response
     /knowledge
-      knowledge.ts    belief types (friend: pos/status/ammo, enemy: pos/count/firing NO ammo)
+      knowledge.ts    belief types (friend: pos/status/ammo, enemy: pos+uncertainty/count/firing NO ammo)
       journal.ts      append-only log + assertion helpers (query utils return with AAR, Phase 8)
-      observation.ts  tier 1 — LOS-driven truth updates (muzzle flash, man falls)
+      observation.ts  tier 1 — LOS-driven truth updates; relayed sightings queue with latency + bearing error
       audible.ts      tier 1 — wound-gated cries, attenuated
       elicited.ts     tier 2 — sound off (three-valued), mag check
     /behaviour
       fireControl.ts  2IC: intent → per-man rates with ammo discipline, re-bomb rotation, silent lapse
-      individual.ts   fire & movement bounds — one-foot-on-ground + no-move-without-fire gates
+      individual.ts   fire & movement bounds — one-foot-on-ground + no-move-without-fire gates; Battle Drill 2 dash-down-crawl
+      areaFire.ts     speculative area fire at the believed position — ammo real, suppression only
       pair.ts         (stub — assault phases, post-MVP)
-      fireteam.ts     (stub — assault phases, post-MVP)
+      fireteam.ts     Charlie/Delta split, offset assault axis, shared line-up geometry
       baseline.ts     shake out into an extended line on the believed threat bearing
-      section.ts      section verbs — doctrinal withdrawal to a rally line
+      section.ts      section verbs — sequenced doctrinal withdrawal, fire-support + assault split
       decisionTree.ts commander's appreciation — data-driven, Knowledge-only, Hold/Withdraw wired
   /worldgen     # single source of truth for looks AND tactics
     noise.ts          gradient noise, fbm, ridged (ported from reference)
@@ -67,8 +68,10 @@ they're adopted, phase by phase (design doc §7.2).
       SoldierRenderer.ts (stub — Phase 3)
     markers.ts        (stub — Phase 5, draws from Knowledge ONLY)
   /audio
-    fireDensity.ts    (stub — Phase 6)
-    cues.ts           (stub — Phase 6)
+    config.ts         audio-only tunables (attenuation, crack synthesis, fallback)
+    fireDensity.ts    tier 3 — pure density model from truth rates (never writes Knowledge)
+    cues.ts           WebAudio procedural cracks, positional, Poisson-scheduled
+    screenEdge.ts     visual accessibility fallback — directional edge intensity
   /ui
     orders.ts         battle-drill-grouped verbal orders; readouts from Knowledge ONLY
     contact.ts        (stub — Phase 8)
@@ -89,7 +92,12 @@ they're adopted, phase by phase (design doc §7.2).
     fire-control.test.ts          2IC layer incl. silent-lapse assert (6 tests)
     movement.test.ts              doctrinal invariants, 100-seed sweep (6 tests)
     section-behaviour.test.ts     appreciation + section verbs (7 tests)
-    aar-replay.test.ts            journal derivability (3 tests)
+    aar-replay.test.ts            journal derivability incl. uncertaintyRadius (4 tests)
+    contact-reaction.test.ts      Battle Drill 2 dash-down-crawl + area fire (6 tests)
+    fireteam-assault.test.ts      Charlie/Delta split, mask check, reorg (7 tests)
+    withdrawal.test.ts            sequenced release, smoke/wind, out-of-contact (10 tests)
+    fire-density.test.ts          tier-3 density model + both absence asserts (4 tests)
+    knowledge-uncertainty.test.ts belief radius, relay latency, determinism (6 tests)
   /scenarios
     smoke.spec.ts                 Playwright e2e — app boots
     orders-ui.spec.ts             Playwright e2e — panel mounts, orders dispatch
@@ -105,14 +113,22 @@ Phase 4: done (simulation core — soldier, ammo, wounds, exposure, ballistics, 
 Phase 5: done (knowledge, journal, observation, audible, elicited, seven assertions).
 Phase 7: done machine-side (2IC fire control, individual F&M + doctrinal
   invariants across 100 seeds, baseline, withdrawal, decision tree over
-  Knowledge only). Human movement review pending. pair/fireteam are
-  post-MVP assault-phase stubs.
+  Knowledge only). Human movement review pending. Battle Drill 2 contact
+  reaction (dash-down-crawl) + speculative area fire done. fireteam.ts
+  implemented (Charlie/Delta, offset assault, mask check, reorg mag
+  check); pair.ts remains a post-MVP stub. Withdrawal is sequenced
+  (furthest first), with smoke/wind and out-of-contact re-decision.
 Phase 8: AAR replay core done (journal derivability); mission "ground must
-  be taken" (§13.1 option 1) + assault order done; orders UI panel done.
-  Markers, contact report, time controls pending.
+  be taken" (§13.1 option 1) + assault order done; orders UI panel done
+  (target-indication idiom — range band + direction, never coordinates).
+  Enemy belief carries an uncertainty radius; relayed sightings land with
+  latency and bearing error. Markers, contact report, time controls pending.
+Phase 6: done — tier-3 ambient fire density (pure model + WebAudio cues +
+  visual fallback), both absence asserts in place. Human listening gate
+  pending.
 Phase 2 render: terrain/grass/atmosphere/post ported + adaptive quality;
-  visual gate (human) pending. Phase 3/6: camera spring arm ported;
-  soldier renderer and audio are stubs.
+  visual gate (human) pending. Phase 3: camera spring arm ported;
+  soldier renderer still a stub.
 
 ## Non-negotiable rules
 
@@ -134,7 +150,9 @@ Phase 2 render: terrain/grass/atmosphere/post ported + adaptive quality;
   render) —don't assume the linter catches it.
 - **`/audio` never writes to `Knowledge`.** Same reasoning as above — tier 3
   is unmediated by definiton; a write here would silently collapse three
-  tiers into two. Assert-tested when `/audio` lands (Phase 6), not lint.
+  tiers into two. Assert-tested in tests/invariants/fire-density.test.ts:
+  the density computation runs against a deep-frozen KnowledgeState, and
+  the file's own source is grepped for lapse-flag reads (there are none).
 - **PRNG state is serializable, not a closure.** `src/sim/rng.ts`'s
   `RngState` is a plain object read/written alongside entity state — needed
   for the determinism gate and, later, AAR journal replay.
@@ -148,7 +166,7 @@ Phase 2 render: terrain/grass/atmosphere/post ported + adaptive quality;
 
 ## Running the gates
 
-- `npm run test` — vitest, 113 tests across 17 files (determinism gates,
+- `npm run test` — vitest, 147 tests across 22 files (determinism gates,
   ammo conservation, wound table, suppression model, worldgen consistency,
   knowledge-absence assertions, firefight resolution, exposure/LOS,
   ballistics, LOS-gates-fire, adaptive quality, fire control, movement
@@ -159,8 +177,8 @@ Phase 2 render: terrain/grass/atmosphere/post ported + adaptive quality;
   bugs at compile time, not smoothing them over).
 - `npm run lint` — ESLint.
 - `npm run lint:boundaries` — the `/sim` import-boundary rule above.
-- `npm run test:e2e` — Playwright. Currently one smoke test (app boots,
-  canvas mounts, no console errors); gows starting Phase 2/3.
+- `npm run test:e2e` — Playwright: smoke (app boots, canvas mounts, no
+  console errors) and orders-ui (panel mounts, orders dispatch).
 
 A failure in`npm run test` means either (a) the fixed-timestep/multiplier
 invarant broke (check `src/sim/clock.ts` — `FIXED_DT` changd or accumulator

@@ -185,6 +185,35 @@ docs/iteration-notes.md.
 - Playwright e2e: panel mounts, mission brief shows, buttons dispatch
   orders into the sim.
 
+## Realism pass — five improvements (done, concurrent subagent build)
+- Battle Drill 2 — reaction to effective fire: dash–down–crawl contact
+  reaction (a man never ends his reaction where he was seen going down;
+  RoF 0 mid-reaction; once per first contact via CONTACT_REACT_COOLDOWN)
+  + speculative area fire at the believed position — real ammo, falloff
+  suppression on the true position, no hit rolls.
+- Belief honesty: enemy belief carries uncertaintyRadius (flash tight,
+  audible coarse, tightens ×BELIEF_TIGHTEN_FACTOR to a floor, resets on
+  an inconsistent fix), journalled + AAR-replayable. Relayed sightings
+  (any observer but the commander) queue RELAY_DELAY_SECONDS with a
+  ±RELAY_BEARING_ERROR_DEG bearing error from the sim rng. Readout is
+  the target-indication idiom: "EN: ~200m, HALF RIGHT (±25m)" — never
+  coordinates.
+- Phase 6 — tier-3 ambient fire density: pure computeDensity over truth
+  rates (structurally cannot read Knowledge or any lapse flag; both
+  assert-tested), WebAudio procedural cracks (positional, Poisson),
+  screen-edge visual fallback, M to mute. 2IC lapse is audible only as
+  texture — emergent from per-man rates.
+- Withdrawal made doctrinal: sequenced release (furthest from the threat
+  first, cover keeps firing), smoke grenades with seed-derived wind
+  (clouds drift, block LOS, expire — wasted if the wind is wrong),
+  out-of-contact halt + commander re-decision (no auto-run to the rally).
+- The attack per the excalidraw: Charlie (fire support) / Delta (assault)
+  split, offset assault axis (ASSAULT_OFFSET_ANGLE_DEG), geometric mask
+  check lifts support fire as the assault closes, final-bound rapid
+  inside ASSAULT_RAPID_DIST, reorg issues exactly one mag check through
+  the real tier-2 pipeline. Falls back to one line when Delta is mauled.
+- Gates: 147 vitest tests / 22 files, e2e 2/2, typecheck, lint,
+  boundaries — all green on the merged result.
 ## Next
 - Phase 2 renderer port (terrain, grass, atmosphere, post) — needs human
   visual gate.
