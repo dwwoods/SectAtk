@@ -61,6 +61,25 @@ export interface Soldier {
       for the remainder of the assault (simulation.ts re-asserts this onto
       fireIntent every tick, so it never fights the 2IC's rotation). */
   assaultRapid: boolean;
+
+  // Contact reaction — Battle Drill 2, dash-down-crawl (Phase 7 ext.).
+  /** 'dash' while sprinting away from the incoming fire direction, 'crawl'
+      while leopard-crawling the further offset so he ends up somewhere
+      other than where he was seen going down, null when not reacting.
+      Involuntary — exempt from the one-foot-on-ground mover cap. */
+  contactPhase: 'dash' | 'crawl' | null;
+  /** Sub-target for the current dash/crawl leg. */
+  contactTarget: Vec2 | null;
+  /** Unit direction (away + perpendicular from the shooter) the reaction
+      travels in; the crawl leg continues in this same direction. */
+  contactDir: Vec2 | null;
+  /** Position when the reaction began — the invariant is that he must not
+      end the reaction there. */
+  contactOrigin: Vec2 | null;
+  /** Seconds before this man may react to contact again. Set when a
+      reaction completes so he doesn't re-dash on every subsequent near
+      miss of an ongoing firefight — the drill is for FIRST contact. */
+  contactCooldown: number;
 }
 
 export function isAlive(s: Soldier): boolean {
@@ -113,7 +132,7 @@ export function effectiveRof(s: Soldier): number {
   if (s.suppression >= 0.85) return 0; // pinned
   if (s.reloadT > 0 || s.reBombing) return 0; // not firing
   if (s.ammo.currentMag === 0) return 0; // empty
-
+  if (s.contactPhase) return 0; // dashing/crawling under contact — not firing
   const baseRof = INTENT_ROF[s.fireIntent];
 
   // Suppression multiplier: a logistic-like curve, so ROF degrades gently
@@ -155,6 +174,11 @@ export function createRifleman(
     boundRemaining: 0,
     boundCooldown: 0,
     assaultRapid: false,
+    contactPhase: null,
+    contactTarget: null,
+    contactDir: null,
+    contactOrigin: null,
+    contactCooldown: 0,
   };
 }
 
@@ -186,5 +210,10 @@ export function createEnemy(
     boundRemaining: 0,
     boundCooldown: 0,
     assaultRapid: false,
+    contactPhase: null,
+    contactTarget: null,
+    contactDir: null,
+    contactOrigin: null,
+    contactCooldown: 0,
   };
 }

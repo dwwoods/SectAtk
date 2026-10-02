@@ -134,6 +134,11 @@ function serializeSim(sim: Simulation): string {
       s.moveTarget?.x ?? -9999, s.moveTarget?.z ?? -9999,
       s.bounding ? 1 : 0, s.boundRemaining, s.boundCooldown,
       s.fireteam === 'C' ? 1 : s.fireteam === 'D' ? 2 : 0, s.assaultRapid ? 1 : 0,
+      s.contactPhase === 'dash' ? 1 : s.contactPhase === 'crawl' ? 2 : 0,
+      s.contactTarget?.x ?? -9999, s.contactTarget?.z ?? -9999,
+      s.contactDir?.x ?? -9999, s.contactDir?.z ?? -9999,
+      s.contactOrigin?.x ?? -9999, s.contactOrigin?.z ?? -9999,
+      s.contactCooldown,
     );
   }
 

@@ -103,6 +103,10 @@ describe('fireteams & the offset assault', () => {
   it('(b) mask check: a nearer friendly in the cone zeroes fire-support fire that tick; removing him resumes it', () => {
     const sim = new Simulation(makeScenario(), world, 0xb002);
     locateEnemy(sim);
+    // First contact is already behind them: pre-spend the Battle Drill 2
+    // reaction so nobody dash-crawls (RoF 0) inside the short measurement
+    // windows below — this test isolates the mask-cone geometry.
+    for (const f of sim.friendlies) f.contactCooldown = 99999;
     sim.applyOrder({ type: 'assault' });
     sim.applyOrder({ type: 'set-fire-intent', intent: 'rapid' });
 

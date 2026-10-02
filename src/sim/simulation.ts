@@ -41,6 +41,7 @@ import {
   ASSAULT_RAPID_DIST,
   BOUND_LENGTH,
   BASELINE_SPACING,
+  CONTACT_EARSHOT_RANGE,
 } from './config';
 import type { FireIntent } from './config';
 import { createEnemySection, processEnemyFire } from './enemy/position';
@@ -55,7 +56,7 @@ import { processCryEvent } from './knowledge/audible';
 import { processSoundOff, processMagCheck } from './knowledge/elicited';
 import { TIER2_ORDER_DURATION } from './config';
 import { processFireControl } from './behaviour/fireControl';
-import { processMovement } from './behaviour/individual';
+import { processMovement, processContactReactions, triggerContactReaction } from './behaviour/individual';
 import { formBaseline } from './behaviour/baseline';
 import {
   sectionWithdraw,
@@ -65,6 +66,7 @@ import {
   type WithdrawalPlan,
 } from './behaviour/section';
 import { assignFireteams, offsetAxis, centroidOf, lineUp } from './behaviour/fireteam';
+import { applyAreaFire } from './behaviour/areaFire';
 
 // ── events ─────────────────────────────────────────────────────────────────
 // The truth stream emitted per tick. Knowledge (Phase 5) consumes these to
@@ -400,6 +402,10 @@ export class Simulation {
     //      not next tick's, after fire control has already overwritten it.
     this.applyAssaultRapid();
 
+    // 0.7. Contact reaction — Battle Drill 2 (dash-down-crawl). Independent
+    //      of the bound machinery above and its mover cap; triggered below
+    //      off this tick's enemy fire results (step 2).
+    processContactReactions(this.friendlies, dt);
     // 1. Friendly fire: each alive friendly fires at the enemy position.
     for (const f of this.friendlies) {
       if (!isAlive(f) || !canFight(f)) continue;
@@ -409,7 +415,17 @@ export class Simulation {
       if (nextFloat(this.rng) >= rof * dt) continue;
 
       const target = this.nearestEnemy(f);
-      if (!target) continue;
+      if (!target) {
+        // Speculative area fire — Battle Drill 2. No LOS'd target, but if
+        // the section is in contact and the commander believes he knows
+        // where the enemy is, fire at that believed area (design doc §8
+        // ext.). Suppression only; rounds still come off real ammo.
+        const believed = this.knowledge.enemy.position;
+        if (believed && this.knowledge.enemy.firing) {
+          applyAreaFire(f, believed, this.enemySection.soldiers);
+        }
+        continue;
+      }
 
       // Mask check (switch/lift fire): a fire-support man must not fire
       // when a live friendly is nearer than the target and within
@@ -492,6 +508,23 @@ export class Simulation {
       } else if (r.suppressionAdded > 0) {
         shot.target.suppression = Math.min(1, shot.target.suppression + r.suppressionAdded);
         this.events.push({ type: 'suppressed', soldierId: shot.target.id, amount: r.suppressionAdded });
+      }
+
+      // Contact reaction — Battle Drill 2: a near-miss or a casualty
+      // triggers dash-down-crawl in the man hit, and in any uninjured,
+      // able friendly within earshot of a casualty.
+      if (r.suppressionAdded > 0) {
+        triggerContactReaction(shot.target, shot.source.pos);
+      }
+      if (r.hit && r.wound) {
+        triggerContactReaction(shot.target, shot.source.pos);
+        for (const other of this.friendlies) {
+          if (other.id === shot.target.id) continue;
+          const d = Math.hypot(other.pos.x - shot.target.pos.x, other.pos.z - shot.target.pos.z);
+          if (d <= CONTACT_EARSHOT_RANGE) {
+            triggerContactReaction(other, shot.source.pos);
+          }
+        }
       }
     }
 
