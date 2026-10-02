@@ -17,8 +17,15 @@ import {
   updateFriendKnownDead,
 } from './knowledge';
 import { soldierLos } from '../los';
+import { isAlive } from '../soldier';
 import type { Soldier } from '../soldier';
+import { nextFloat } from '../rng';
+import type { Vec2 } from '../types';
+import { FIXED_DT, RELAY_DELAY_SECONDS, RELAY_BEARING_ERROR_DEG } from '../config';
 
+// A relayed observation lands this many ticks after it was made — see
+// RELAY_DELAY_SECONDS (design doc §3.1).
+const RELAY_DELAY_TICKS = Math.round(RELAY_DELAY_SECONDS / FIXED_DT);
 /**
  * Process a SimEvent for observation. Called for each event the sim emits
  * in a tick. Returns true if the event was consumed (produced a knowledge
@@ -73,22 +80,60 @@ function handleEnemyFired(
   const enemyPos = { x: shooter.pos.x, z: shooter.pos.z };
 
   // Observation is an ACT (design doc §2.1: raising up to observe is a
-  // deliberate physical act with a visible tell). The commander sees muzzle
-  // flashes only while observing and with a clean sightline.
-  if (!sim.observing.has(commander.id)) return false;
-  if (!observerHasLos(sim, commander, shooter)) return false;
+  // deliberate physical act with a visible tell). Any observing, alive man
+  // with a clean sightline can register the sighting — but only the
+  // commander's OWN eyes write Knowledge instantly. Anyone else's sighting
+  // is a relayed report: it carries latency and can be wrong (§3.1).
+  let consumed = false;
 
-  const evidence: Evidence = {
-    kind: 'observation',
-    tick: sim.tick,
-    sourceId: commander.id,
-    bearing: Math.atan2(enemyPos.z - commander.pos.z, enemyPos.x - commander.pos.x),
-    note: `Muzzle flash sighted at approximately (${enemyPos.x.toFixed(0)}, ${enemyPos.z.toFixed(0)})`,
-  };
+  for (const [manId, isObserving] of sim.observing) {
+    if (!isObserving) continue;
+    const observer = sim.world.getEntity(manId);
+    if (!observer || observer.side !== 'friendly' || !isAlive(observer)) continue;
+    if (!observerHasLos(sim, observer, shooter)) continue;
 
-  updateEnemyPosition(knowledge, journal, enemyPos, evidence);
-  updateEnemyFiring(knowledge, journal, true, evidence);
-  return true;
+    if (manId === commander.id) {
+      const evidence: Evidence = {
+        kind: 'observation',
+        tick: sim.tick,
+        sourceId: commander.id,
+        bearing: Math.atan2(enemyPos.z - commander.pos.z, enemyPos.x - commander.pos.x),
+        note: `Muzzle flash sighted at approximately (${enemyPos.x.toFixed(0)}, ${enemyPos.z.toFixed(0)})`,
+      };
+      updateEnemyPosition(knowledge, journal, enemyPos, evidence);
+      updateEnemyFiring(knowledge, journal, true, evidence);
+      consumed = true;
+    } else {
+      queueRelayedObservation(sim, observer, enemyPos);
+      consumed = true;
+    }
+  }
+
+  return consumed;
+}
+
+/** A man other than the commander sights the enemy. His report is queued
+    rather than written straight to Knowledge: it lands RELAY_DELAY_TICKS
+    later, and the bearing he reported has already picked up a random
+    error by then (design doc §3.1: "relayed observations carry latency
+    and can be wrong"). Range is kept true — only the bearing degrades. */
+function queueRelayedObservation(sim: Simulation, observer: Soldier, enemyPos: Vec2): void {
+  const dx = enemyPos.x - observer.pos.x;
+  const dz = enemyPos.z - observer.pos.z;
+  const range = Math.hypot(dx, dz);
+  const trueBearing = Math.atan2(dz, dx);
+
+  const errorDeg = (nextFloat(sim.rng) * 2 - 1) * RELAY_BEARING_ERROR_DEG;
+  const reportedBearing = trueBearing + (errorDeg * Math.PI) / 180;
+
+  sim.relayQueue.push({
+    landTick: sim.tick + RELAY_DELAY_TICKS,
+    observerId: observer.id,
+    position: {
+      x: observer.pos.x + range * Math.cos(reportedBearing),
+      z: observer.pos.z + range * Math.sin(reportedBearing),
+    },
+  });
 }
 
 function handleFriendlyWounded(

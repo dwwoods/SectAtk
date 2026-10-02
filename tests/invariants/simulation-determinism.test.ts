@@ -147,6 +147,13 @@ function serializeSim(sim: Simulation): string {
     values.push(sim.observing.has(f.id) ? 1 : 0);
   }
 
+  // Relayed-observation queue — plain serializable sim state.
+  values.push(sim.relayQueue.length);
+  for (const r of sim.relayQueue) {
+    const observerIndex = sim.friendlies.findIndex((f) => f.id === r.observerId);
+    values.push(r.landTick, observerIndex, r.position.x, r.position.z);
+  }
+
   // Knowledge: the commander's picture (beliefs must also be deterministic).
   for (const f of sim.friendlies) {
     const b = sim.knowledge.friendlies.get(f.id);
@@ -163,6 +170,7 @@ function serializeSim(sim: Simulation): string {
     sim.knowledge.enemy.countEstimate ?? -1,
     sim.knowledge.enemy.firing ? 1 : 0,
     sim.knowledge.enemy.lastFiredTick ?? -1,
+    sim.knowledge.enemy.uncertaintyRadius ?? -1,
   );
 
   const buf = Float64Array.from(values, (n) => (n === 0 ? 0 : n));

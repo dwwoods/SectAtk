@@ -73,5 +73,8 @@ function applyEnemy(k: KnowledgeState, field: string, after: unknown, tick: numb
     case 'countEstimate':
       k.enemy.countEstimate = after as number | null;
       break;
+    case 'uncertaintyRadius':
+      k.enemy.uncertaintyRadius = after as number | null;
+      break;
   }
 }

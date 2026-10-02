@@ -50,7 +50,14 @@ import { resolveShot } from './ballistics';
 import { soldierLos } from './los';
 import type { StanceName, Vec2, SmokeCloud } from './types';
 import type { WorldGen } from '../worldgen';
-import { createKnowledge, type KnowledgeState, type Journal } from './knowledge/knowledge';
+import {
+  createKnowledge,
+  updateEnemyPosition,
+  updateEnemyFiring,
+  type KnowledgeState,
+  type Journal,
+  type Evidence,
+} from './knowledge/knowledge';
 import { processObservationEvent } from './knowledge/observation';
 import { processCryEvent } from './knowledge/audible';
 import { processSoundOff, processMagCheck } from './knowledge/elicited';
@@ -171,6 +178,11 @@ export class Simulation {
   tier2BusyTicks = 0;
   /** The pending tier-2 order type, set when queued. */
   pendingTier2: 'sound-off' | 'mag-check' | null = null;
+  /** Relayed observations in flight — sighted by a man other than the
+      commander, landing RELAY_DELAY_TICKS later with a bearing error
+      already baked in (design doc §3.1). Plain serializable data, drained
+      in step(); included in the determinism gate. */
+  readonly relayQueue: Array<{ landTick: number; observerId: string; position: Vec2 }> = [];
   /** Mission — ground must be taken. Truth lives here; what the
       commander can READ of it is his own men's reports and his eyes. */
   readonly mission: MissionState = { status: 'none', holdTicks: 0 };
@@ -635,6 +647,21 @@ export class Simulation {
       }
     }
 
+    // 7.5. Land relayed observations whose delay has elapsed. Kind stays
+    //      'observation' (not a new evidence kind) — only the sourceId (not
+    //      the commander) and the bearing-corrupted position mark it as a
+    //      relayed report rather than a direct sighting.
+    while (this.relayQueue.length > 0 && this.relayQueue[0]!.landTick <= this.tick) {
+      const relay = this.relayQueue.shift()!;
+      const evidence: Evidence = {
+        kind: 'observation',
+        tick: this.tick,
+        sourceId: relay.observerId,
+        note: `Relayed sighting from ${relay.observerId}`,
+      };
+      updateEnemyPosition(this.knowledge, this.journal, relay.position, evidence);
+      updateEnemyFiring(this.knowledge, this.journal, true, evidence);
+    }
     return this.events;
   }
 

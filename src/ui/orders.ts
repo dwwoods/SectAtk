@@ -28,6 +28,41 @@ const INTENTS: Array<{ intent: FireIntent; label: string }> = [
   { intent: 'rapid', label: 'RAPID FIRE!' },
 ];
 
+// Target indication (design doc §3.4): range banded to the nearest 50m,
+// direction as a clock/half-left idiom relative to the section's current
+// facing (the commander's heading) — never raw coordinates, and never
+// anything but the believed position. ±N is the belief's own uncertainty
+// radius, so the readout never claims more precision than Knowledge has.
+function directionIdiom(relativeDeg: number): string {
+  const d = ((relativeDeg % 360) + 360) % 360;
+  if (d < 22.5 || d >= 337.5) return 'AHEAD';
+  if (d < 67.5) return 'HALF RIGHT';
+  if (d < 112.5) return 'RIGHT';
+  if (d < 157.5) return 'BEHIND RIGHT';
+  if (d < 202.5) return 'BEHIND';
+  if (d < 247.5) return 'BEHIND LEFT';
+  if (d < 292.5) return 'LEFT';
+  return 'HALF LEFT';
+}
+
+function targetIndication(sim: Simulation): string {
+  const commander = sim.friendlies[0];
+  const belief = sim.knowledge.enemy;
+  if (!commander || !belief.position) return 'EN: NOT LOCATED';
+
+  const dx = belief.position.x - commander.pos.x;
+  const dz = belief.position.z - commander.pos.z;
+  const range = Math.hypot(dx, dz);
+  const rangeBand = Math.round(range / 50) * 50;
+
+  const bearingToTarget = Math.atan2(dz, dx);
+  const relativeDeg = ((bearingToTarget - commander.heading) * 180) / Math.PI;
+  const direction = directionIdiom(relativeDeg);
+
+  const radius = Math.round(belief.uncertaintyRadius ?? 0);
+  return `EN: ~${rangeBand}m, ${direction} (±${radius}m)`;
+}
+
 export class OrdersPanel {
   readonly root: HTMLDivElement;
   private sim: Simulation;
@@ -125,11 +160,7 @@ export class OrdersPanel {
       lines.push(`MISSION: ${label}`);
     }
 
-    lines.push(
-      k.enemy.position
-        ? `EN: located approx (${k.enemy.position.x.toFixed(0)}, ${k.enemy.position.z.toFixed(0)})`
-        : 'EN: NOT LOCATED',
-    );
+    lines.push(targetIndication(this.sim));
 
     // The commander's picture of his own men — believed, not true.
     const statuses = [...k.friendlies.values()]

@@ -256,3 +256,26 @@ export const MINOR_CRY_DURATION = 60;
 /** Seconds a sound-off or mag-check takes to execute. During this time the
     commander is not observing, and ammunition keeps burning. Provisional. */
 export const TIER2_ORDER_DURATION = 5;
+
+// ── belief uncertainty & relay latency (design doc §3.1) ───────────────────
+/** Uncertainty radius (m) set on a freshly observed muzzle flash — a
+    direct sighting, commander's own or relayed. */
+export const BELIEF_RADIUS_FLASH = 25;
+/** Uncertainty radius (m) set by audible-only evidence — no visual fix,
+    just a sound. Deliberately coarse; wired for the day an audible-only
+    enemy-position channel lands (none exists yet — the design doc is
+    explicit that raw enemy fire is tier 3, unmediated, see knowledge.ts). */
+export const BELIEF_RADIUS_AUDIBLE = 80;
+/** Repeated evidence consistent with the standing belief (a new fix inside
+    its own uncertainty) tightens the radius multiplicatively rather than
+    resetting it. */
+export const BELIEF_TIGHTEN_FACTOR = 0.7;
+/** Floor: the belief never claims pinpoint accuracy. */
+export const BELIEF_RADIUS_MIN = 10;
+/** Seconds a relayed observation — made by a man other than the commander
+    — takes to reach him. The commander's own sightings are instant; a
+    relayed one carries latency and can be wrong (design doc §3.1). */
+export const RELAY_DELAY_SECONDS = 3;
+/** Max bearing error (degrees), applied uniformly in [-N, N] to the
+    observer's true bearing to the target, picked up by a relayed report. */
+export const RELAY_BEARING_ERROR_DEG = 8;

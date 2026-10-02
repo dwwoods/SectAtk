@@ -90,4 +90,26 @@ describe('AAR replay (journal derivability)', () => {
       expect(sim.journal[i]!.tick).toBeGreaterThanOrEqual(sim.journal[i - 1]!.tick);
     }
   });
+
+  it("replay reproduces the enemy belief's uncertaintyRadius exactly, including every tightening step", () => {
+    const sim = runBusyFirefight(0xbead);
+    const radiusTicks = sim.journal
+      .filter((e) => e.subject === 'enemy' && e.field === 'uncertaintyRadius')
+      .map((e) => e.tick);
+    expect(radiusTicks.length).toBeGreaterThan(0); // the run produced at least one sighting
+
+    // At every tick where the radius changed, a fold up to that exact tick
+    // must already show a concrete number (never left over from a type
+    // that doesn't exist yet) — the write and the journal entry land
+    // together, atomically, with no in-between state.
+    for (const tick of radiusTicks) {
+      const replayed = beliefAtTick(sim.journal, section(), tick);
+      expect(typeof replayed.enemy.uncertaintyRadius).toBe('number');
+    }
+
+    // The final replay must match the live Knowledge's radius exactly —
+    // the derivability invariant, focused on this one field.
+    const replayed = beliefAtTick(sim.journal, section());
+    expect(replayed.enemy.uncertaintyRadius).toBe(sim.knowledge.enemy.uncertaintyRadius);
+  });
 });

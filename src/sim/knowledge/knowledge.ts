@@ -10,6 +10,12 @@
 // Knowledge (§9.4, absence assertion #6).
 
 import type { Vec2 } from '../types';
+import {
+  BELIEF_RADIUS_FLASH,
+  BELIEF_RADIUS_AUDIBLE,
+  BELIEF_TIGHTEN_FACTOR,
+  BELIEF_RADIUS_MIN,
+} from '../config';
 
 // ── evidence ───────────────────────────────────────────────────────────────
 
@@ -63,6 +69,10 @@ export interface FriendBelief {
 export interface EnemyBelief {
   /** Believed position (from muzzle flashes / observed fire). */
   position: Vec2 | null;
+  /** Uncertainty radius (m) around `position` — never pinpoint. Tightens
+      with corroborating evidence, floors at BELIEF_RADIUS_MIN (design doc
+      §3.1). null only when position is null. */
+  uncertaintyRadius: number | null;
   /** Believed number of rifles (from fire density, never exact). */
   countEstimate: number | null;
   /** Believed firing state — has the enemy been heard firing recently? */
@@ -82,7 +92,7 @@ export function createKnowledge(friendlies: Array<{ id: string; name: string }>)
     friendlies: new Map(
       friendlies.map((f) => [f.id, { id: f.id, name: f.name, position: null, status: 'unknown', ammoLow: null, knownDead: false }]),
     ),
-    enemy: { position: null, countEstimate: null, firing: false, lastFiredTick: null },
+    enemy: { position: null, uncertaintyRadius: null, countEstimate: null, firing: false, lastFiredTick: null },
   };
 }
 
@@ -173,17 +183,48 @@ export function updateEnemyPosition(
   position: Vec2,
   evidence: Evidence,
 ): void {
-  // Position ONLY. The firing state is a separate belief with its own
-  // journal entry (updateEnemyFiring) — writing it here as a side effect
-  // would bypass the journal and break AAR derivability
+  // Position AND its uncertainty radius are written here, each with its
+  // own journal entry (one-field-per-entry convention, as updateEnemyFiring
+  // already does for `firing`). The firing state itself stays a separate
+  // belief with its own entry (updateEnemyFiring) — folding it in here as a
+  // side effect would bypass the journal and break AAR derivability
   // (tests/invariants/aar-replay.test.ts caught exactly that).
   const before = state.enemy.position;
-  if (sameVec(before, position)) return;
-  state.enemy.position = { ...position };
-  appendJournalEntry(journal, {
-    tick: evidence.tick, subject: 'enemy', field: 'position',
-    before: before ? { ...before } : null, after: { ...position }, evidence,
-  });
+  const beforeRadius = state.enemy.uncertaintyRadius;
+  const positionChanged = !sameVec(before, position);
+
+  // Evidence kind sets the base radius: a direct sighting (muzzle flash,
+  // commander's own or relayed) is tight; audible-only evidence (no
+  // current call site — see BELIEF_RADIUS_AUDIBLE in config.ts) is coarse.
+  const baseRadius = evidence.kind === 'observation' ? BELIEF_RADIUS_FLASH : BELIEF_RADIUS_AUDIBLE;
+
+  // A new fix inside the standing belief's own uncertainty corroborates it
+  // — tighten multiplicatively rather than resetting. A fix outside that
+  // radius is a fresh, uncorroborated read: reset to the base radius.
+  const consistent =
+    before !== null &&
+    beforeRadius !== null &&
+    Math.hypot(position.x - before.x, position.z - before.z) <= beforeRadius;
+
+  const radius = consistent && beforeRadius !== null
+    ? Math.max(BELIEF_RADIUS_MIN, Math.min(beforeRadius, baseRadius) * BELIEF_TIGHTEN_FACTOR)
+    : baseRadius;
+
+  if (positionChanged) {
+    state.enemy.position = { ...position };
+    appendJournalEntry(journal, {
+      tick: evidence.tick, subject: 'enemy', field: 'position',
+      before: before ? { ...before } : null, after: { ...position }, evidence,
+    });
+  }
+
+  if (beforeRadius !== radius) {
+    state.enemy.uncertaintyRadius = radius;
+    appendJournalEntry(journal, {
+      tick: evidence.tick, subject: 'enemy', field: 'uncertaintyRadius',
+      before: beforeRadius, after: radius, evidence,
+    });
+  }
 }
 
 export function updateEnemyFiring(
