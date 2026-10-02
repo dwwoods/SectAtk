@@ -3,16 +3,23 @@
 // movement — so every section manoeuvre is gated by the same two
 // doctrinal invariants as a lone rifleman's bound.
 //
-// MVP wires the doctrinal withdrawal (§2.5 requires it; the decision
-// tree's root can demand it) and the section assault — battle drill 5:
-// fight THROUGH the position to its far side, never onto its lip. The
-// pair/fireteam choreography (intimate fire support, the offset assault)
-// arrives post-MVP; MVP assaults as a section line under the F&M gates.
+// Wires the doctrinal withdrawal (§2.5 requires it; the decision tree's
+// root can demand it) and the section assault — battle drill 5: Charlie
+// (fire support) holds while Delta (the assault group) fights THROUGH the
+// position on an offset axis to its far side, never onto its lip
+// (behaviour/fireteam.ts for the split and the shared line-formation
+// geometry). A mauled section falls back to one line under the F&M gates.
 
 import type { Soldier } from '../soldier';
 import type { Vec2 } from '../types';
-import { isAlive, canMove } from '../soldier';
-import { BASELINE_SPACING, ASSAULT_THROUGH_DEPTH } from '../config';
+import { isAlive, canMove, canFight } from '../soldier';
+import {
+  BASELINE_SPACING,
+  ASSAULT_THROUGH_DEPTH,
+  ASSAULT_MIN_TEAM,
+  ASSAULT_OFFSET_ANGLE_DEG,
+} from '../config';
+import { teamOf, centroidOf, offsetAxis, lineUp } from './fireteam';
 
 // ── doctrinal withdrawal — sequenced release (design doc §2.5, §8) ─────────
 // The drill: the man furthest from the threat (rear-most) moves first;
@@ -176,41 +183,69 @@ export function isWithdrawalFinished(plan: WithdrawalPlan, friendlies: Soldier[]
 }
 
 /**
- * Battle drill 5 — the attack. The section assaults through the BELIEVED
- * enemy position: a line perpendicular to the axis of assault, centred
- * ASSAULT_THROUGH_DEPTH metres beyond the position, so men fight through
- * and reorganise on the far side (drill 6). Executed by individual fire
- * & movement — one foot on the ground all the way in.
+ * Battle drill 5 — the attack, per the excalidraw: Charlie (fire support)
+ * holds the believed enemy position under fire while Delta (the assault
+ * group) bounds in on an axis OFFSET from the direct fire-support→enemy
+ * line, to a line ASSAULT_THROUGH_DEPTH beyond the believed position, so
+ * the assault fights through to the far side (drill 6 reorganises there)
+ * rather than onto the lip — and so Charlie can keep firing until the
+ * assault's own geometry masks it (simulation.ts's mask check).
+ *
+ * A mauled section with fewer than ASSAULT_MIN_TEAM able Delta men cannot
+ * sustain the two-team technique and falls back to the old whole-section
+ * single line through the position.
  */
-export function sectionAssault(friendlies: Soldier[], believedEnemy: Vec2): number {
+export interface AssaultResult {
+  /** True when the offset two-team assault ran; false when the section
+      fell back to one whole-section line. */
+  split: boolean;
+  /** Men given a move target by this call. */
+  count: number;
+}
+
+export function sectionAssault(friendlies: Soldier[], believedEnemy: Vec2): AssaultResult {
+  const charlie = teamOf(friendlies, 'C');
+  const delta = teamOf(friendlies, 'D');
+  const deltaAble = delta.filter((f) => isAlive(f) && canFight(f) && canMove(f));
+
+  if (deltaAble.length < ASSAULT_MIN_TEAM) {
+    return { split: false, count: fallbackAssault(friendlies, believedEnemy) };
+  }
+
+  // Fire support holds its ground — clear any stale move target. It keeps
+  // firing on its own: the existing per-tick fire step reads fireIntent
+  // and LOS exactly as it always has: no change needed here.
+  for (const f of charlie) {
+    if (isAlive(f)) f.moveTarget = null;
+  }
+
+  const charlieAble = charlie.filter((f) => isAlive(f));
+  const supportFrom = charlieAble.length > 0 ? centroidOf(charlieAble) : centroidOf(deltaAble);
+  const axis = offsetAxis(supportFrom, believedEnemy, ASSAULT_OFFSET_ANGLE_DEG);
+  const centre = {
+    x: believedEnemy.x + axis.x * ASSAULT_THROUGH_DEPTH,
+    z: believedEnemy.z + axis.z * ASSAULT_THROUGH_DEPTH,
+  };
+  const count = lineUp(deltaAble, centre, axis, BASELINE_SPACING);
+  return { split: true, count };
+}
+
+/** The old whole-section behaviour: every able man forms a line through
+    the believed position, along the direct axis from the section's own
+    centroid. Used only when the section is too mauled to split. */
+function fallbackAssault(friendlies: Soldier[], believedEnemy: Vec2): number {
   const able = friendlies.filter((f) => isAlive(f) && canMove(f));
   if (able.length === 0) return 0;
 
-  let cx = 0;
-  let cz = 0;
-  for (const f of able) {
-    cx += f.pos.x;
-    cz += f.pos.z;
-  }
-  cx /= able.length;
-  cz /= able.length;
-
-  const ax = believedEnemy.x - cx;
-  const az = believedEnemy.z - cz;
+  const centroid = centroidOf(able);
+  const ax = believedEnemy.x - centroid.x;
+  const az = believedEnemy.z - centroid.z;
   const ad = Math.hypot(ax, az) || 1;
   const ux = ax / ad;
   const uz = az / ad;
-  const px = -uz;
-  const pz = ux;
-
-  const centreX = believedEnemy.x + ux * ASSAULT_THROUGH_DEPTH;
-  const centreZ = believedEnemy.z + uz * ASSAULT_THROUGH_DEPTH;
-
-  const half = (able.length - 1) / 2;
-  for (let i = 0; i < able.length; i++) {
-    const offset = (i - half) * BASELINE_SPACING;
-    const man = able[i]!;
-    man.moveTarget = { x: centreX + px * offset, z: centreZ + pz * offset };
-  }
-  return able.length;
+  const centre = {
+    x: believedEnemy.x + ux * ASSAULT_THROUGH_DEPTH,
+    z: believedEnemy.z + uz * ASSAULT_THROUGH_DEPTH,
+  };
+  return lineUp(able, centre, { x: ux, z: uz }, BASELINE_SPACING);
 }

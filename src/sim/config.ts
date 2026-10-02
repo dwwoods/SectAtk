@@ -165,6 +165,24 @@ export const MISSION_MIN_EFFECTIVES = 3;
     drill is through the objective to the far side, not onto the lip. */
 export const ASSAULT_THROUGH_DEPTH = 10;
 
+// ── fireteams & the offset assault (design doc §8, §10, the excalidraw) ───
+// Charlie (fire support) and Delta (the assault group) — a fixed split
+// assigned once at scenario setup. Charlie holds and shoots; Delta bounds
+// in on an axis offset from the direct fire-support→enemy line, so support
+// can keep firing until the assault masks it (battle drill 5, two-team form).
+/** Minimum able (alive, can-fight) Delta men below which a mauled section
+    falls back to the old whole-section single-line assault. */
+export const ASSAULT_MIN_TEAM = 3;
+/** Degrees the assault axis is offset from the direct fire-support→enemy
+    line. Provisional. */
+export const ASSAULT_OFFSET_ANGLE_DEG = 30;
+/** Metres from the believed position inside which an assaulting man's
+    personal rate goes to rapid for the remainder of the assault. */
+export const ASSAULT_RAPID_DIST = 25;
+/** Degrees either side of a shooter's line to his target inside which a
+    nearer live friendly masks his fire — switch/lift fire, pure geometry. */
+export const MASK_CONE_DEG = 10;
+
 // ── voice (design doc §3.1, tier 2) ────────────────────────────────────────
 /** Max range for a sound-off / mag-check answer to be heard, metres. */
 export const VOICE_RANGE = 300;

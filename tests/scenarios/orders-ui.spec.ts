@@ -7,6 +7,7 @@ import { expect, test } from '@playwright/test';
 // NOTE: window.__sectatk is declared globally (loosely typed) in
 // src/main.ts; this file reads it through a local cast rather than a
 // second `declare global`, which TS refuses to merge with a narrower shape.
+type SectAtkDebugHandle = { sim: { sectionIntent: string; mission: { status: string } } };
 
 test('orders panel mounts and dispatches orders', async ({ page }) => {
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -25,14 +26,10 @@ test('orders panel mounts and dispatches orders', async ({ page }) => {
   // Ordering RAPID FIRE reaches the sim as section intent.
   await page.getByRole('button', { name: 'RAPID FIRE!' }).click();
   await expect
-    .poll(async () => page.evaluate(
-      () => (window as unknown as { __sectatk?: { sim: { sectionIntent: string } } }).__sectatk?.sim.sectionIntent,
-    ))
+    .poll(async () => page.evaluate(() => (window as unknown as { __sectatk?: SectAtkDebugHandle }).__sectatk?.sim.sectionIntent))
     .toBe('rapid');
 
   // The mission is live.
-  const status = await page.evaluate(
-    () => (window as unknown as { __sectatk?: { sim: { mission: { status: string } } } }).__sectatk?.sim.mission.status,
-  );
+  const status = await page.evaluate(() => (window as unknown as { __sectatk?: SectAtkDebugHandle }).__sectatk?.sim.mission.status);
   expect(status).toBe('active');
 });

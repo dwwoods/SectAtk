@@ -17,6 +17,7 @@ import {
   MISSION_HOLD_SECONDS,
   MISSION_MIN_EFFECTIVES,
   ASSAULT_THROUGH_DEPTH,
+  ASSAULT_OFFSET_ANGLE_DEG,
 } from '../../src/sim/config';
 
 const OBJECTIVE = { x: 60, z: -10 };
@@ -123,7 +124,7 @@ describe('mission: ground must be taken', () => {
     expect(failedEvent).toBe(true);
   });
 
-  it('assault no-ops until the enemy is located in Knowledge, then fights THROUGH', () => {
+  it('assault no-ops until the enemy is located in Knowledge, then fights THROUGH (Delta only)', () => {
     const sim = new Simulation(makeScenario(), world, 0x6666);
     sim.applyOrder({ type: 'assault' });
     expect(sim.friendlies.every((f) => f.moveTarget === null)).toBe(true);
@@ -131,10 +132,20 @@ describe('mission: ground must be taken', () => {
     const j: Journal = [];
     updateEnemyPosition(sim.knowledge, j, { ...OBJECTIVE }, evidence());
     sim.applyOrder({ type: 'assault' });
+
+    // Charlie (fire support) holds — no move target.
+    const charlie = sim.friendlies.filter((f) => f.fireteam === 'C');
+    const delta = sim.friendlies.filter((f) => f.fireteam === 'D');
+    expect(charlie.every((f) => f.moveTarget === null)).toBe(true);
+
+    // Delta (the assault group) alone gets move targets.
     const targets = sim.friendlies.filter((f) => f.moveTarget !== null);
-    expect(targets.length).toBe(8);
+    expect(targets.length).toBe(delta.length);
+    expect(targets.every((f) => f.fireteam === 'D')).toBe(true);
+
     // The assault line is centred BEYOND the believed position — fight
-    // through to the far side, not onto the lip.
+    // through to the far side, not onto the lip — on an axis OFFSET from
+    // the direct fire-support→enemy line.
     let cx = 0;
     let cz = 0;
     for (const f of targets) {
@@ -148,6 +159,24 @@ describe('mission: ground must be taken', () => {
     // And it lies on the far side: further from the section start than
     // the objective itself.
     expect(cx).toBeGreaterThan(OBJECTIVE.x);
+
+    // The axis to Delta's through-line is offset from the direct
+    // fire-support→enemy line by roughly ASSAULT_OFFSET_ANGLE_DEG.
+    let scx = 0;
+    let scz = 0;
+    for (const f of charlie) {
+      scx += f.pos.x;
+      scz += f.pos.z;
+    }
+    scx /= charlie.length;
+    scz /= charlie.length;
+    const direct = { x: OBJECTIVE.x - scx, z: OBJECTIVE.z - scz };
+    const directLen = Math.hypot(direct.x, direct.z);
+    const toCentre = { x: cx - OBJECTIVE.x, z: cz - OBJECTIVE.z };
+    const toCentreLen = Math.hypot(toCentre.x, toCentre.z);
+    const cosAngle = (direct.x * toCentre.x + direct.z * toCentre.z) / (directLen * toCentreLen);
+    const angleDeg = (Math.acos(Math.min(1, Math.max(-1, cosAngle))) * 180) / Math.PI;
+    expect(angleDeg).toBeCloseTo(ASSAULT_OFFSET_ANGLE_DEG, 0);
   });
 
   it('a scripted attack takes the ground end-to-end under the doctrinal gates', () => {
